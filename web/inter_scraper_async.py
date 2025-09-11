@@ -59,6 +59,19 @@ class AsyncInterScraper:
                 return txt
         except PlaywrightTimeoutError:
             pass
+        # Alternative anchor: by text content of the title (class may vary)
+        try:
+            title_by_text = page.locator(
+                "xpath=(//*[self::p or self::h1 or self::h2 or self::div][contains(normalize-space(.), 'Estado actual de tu envío')])[1]"
+            )
+            await title_by_text.wait_for(state="visible", timeout=min(6000, self._timeout))
+            value = title_by_text.locator("xpath=following::p[contains(@class,'font-weight-600')][1]")
+            await value.wait_for(state="visible", timeout=min(6000, self._timeout))
+            txt = (await value.inner_text()).strip()
+            if txt:
+                return txt
+        except PlaywrightTimeoutError:
+            pass
         # Direct CSS fallback within the same content card
         with suppress(Exception):
             value2 = page.locator("css=div.content p.font-weight-600").first

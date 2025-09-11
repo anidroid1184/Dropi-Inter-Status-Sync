@@ -180,6 +180,8 @@ def update_statuses(sheets: SheetsClient, scraper: InterScraper, start_row: int 
     for idx, record in enumerate(records, start=2):
         if idx < start_row:
             continue
+        if end_row is not None and idx > end_row:
+            break
         if limit is not None and processed >= limit:
             break
 
@@ -259,7 +261,19 @@ def update_statuses(sheets: SheetsClient, scraper: InterScraper, start_row: int 
     logging.info("Statuses updated. Processed rows: %d, differences: %d", processed, len(differences))
 
 
-async def update_statuses_async(sheets: SheetsClient, headless: bool, start_row: int = 2, limit: int | None = None, max_concurrency: int = 3, rps: float | None = None):
+async def update_statuses_async(
+    sheets: SheetsClient,
+    headless: bool,
+    start_row: int = 2,
+    end_row: int | None = None,
+    limit: int | None = None,
+    max_concurrency: int = 3,
+    rps: float | None = None,
+    retries: int = 2,
+    timeout_ms: int = 30000,
+    batch_size: int = 5000,
+    sleep_between_batches: float = 20.0,
+):
     records = sheets.read_main_records()
     headers = sheets.read_headers()
 
@@ -308,61 +322,92 @@ async def update_statuses_async(sheets: SheetsClient, headless: bool, start_row:
         logging.info("No eligible rows to process")
         return
 
-    scraper = AsyncInterScraper(headless=headless, max_concurrency=max_concurrency)
-    await scraper.start()
-    try:
-        # Fetch statuses concurrently
-        tn_list = [tn for _, tn, _, _ in items]
-        results = await scraper.get_status_many(tn_list, rps=rps)
-        status_by_tn = {tn: raw for tn, raw in results}
+    # Process in batches to keep browser fresh and reduce blanks over long runs
+    def chunk(seq, size):
+        for i in range(0, len(seq), size):
+            yield seq[i:i+size]
 
-        for (idx, tn, dropi_raw, dropi) in items:
-            web_status_raw = status_by_tn.get(tn, "")
-            exp = TrackerService.explain_normalization(web_status_raw)
-            web_status = exp["status"]
-            via = exp.get("via", "")
-            new_status = ""
-            if via not in {"mapping", "override"}:
-                new_status = (web_status_raw or "").strip()
-            _update_status_catalog(web_status_raw or "", via)
+    processed_total = 0
+    for batch_idx, batch in enumerate(chunk(items, max(1, int(batch_size))), start=1):
+        logging.info("Processing batch %d with %d items", batch_idx, len(batch))
+        scraper = AsyncInterScraper(
+            headless=headless,
+            max_concurrency=max_concurrency,
+            retries=retries,
+            timeout_ms=timeout_ms,
+        )
+        await scraper.start()
+        try:
+            tn_list = [tn for _, tn, _, _ in batch]
+            results = await scraper.get_status_many(tn_list, rps=rps)
+            status_by_tn = {tn: raw for tn, raw in results}
 
-            alerta = TrackerService.compute_alert(dropi, web_status)
+            # Optional second pass for empties in this batch (quick re-try burst)
+            missing = [tn for tn in tn_list if not (status_by_tn.get(tn) or "").strip()]
+            if missing:
+                logging.info("Second pass for %d empty results in batch %d", len(missing), batch_idx)
+                results2 = await scraper.get_status_many(missing, rps=(rps or 0.8))
+                for tn, raw in results2:
+                    if raw:
+                        status_by_tn[tn] = raw
 
-            _append_status_log(
-                status_log_path,
-                tn,
-                dropi_raw,
-                dropi,
-                web_status_raw or "",
-                web_status,
-                alerta,
-                via,
-                new_status,
-            )
+            for (idx, tn, dropi_raw, dropi) in batch:
+                web_status_raw = status_by_tn.get(tn, "")
+                exp = TrackerService.explain_normalization(web_status_raw)
+                web_status = exp["status"]
+                via = exp.get("via", "")
+                new_status = ""
+                if via not in {"mapping", "override"}:
+                    new_status = (web_status_raw or "").strip()
+                _update_status_catalog(web_status_raw or "", via)
 
-            # Only write if we have a non-empty normalized status
-            if web_status:
-                row_updates = [None] * web_col
-                row_updates[web_col - 1] = web_status
-                batch_updates.append((idx, row_updates))
+                alerta = TrackerService.compute_alert(dropi, web_status)
 
-            if dropi != web_status:
-                differences.append([
+                _append_status_log(
+                    status_log_path,
                     tn,
+                    dropi_raw,
                     dropi,
+                    web_status_raw or "",
                     web_status,
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                ])
+                    alerta,
+                    via,
+                    new_status,
+                )
 
-        if batch_updates:
-            _flush_batch(sheets, batch_updates)
+                if web_status:
+                    row_updates = [None] * web_col
+                    row_updates[web_col - 1] = web_status
+                    batch_updates.append((idx, row_updates))
 
-        if differences:
-            sheets.create_or_append_daily_report(differences, prefix=settings.daily_report_prefix)
+                if dropi != web_status:
+                    differences.append([
+                        tn,
+                        dropi,
+                        web_status,
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    ])
 
-        logging.info("Statuses updated (async). Processed rows: %d, differences: %d", len(items), len(differences))
-    finally:
-        await scraper.close()
+            if batch_updates:
+                _flush_batch(sheets, batch_updates)
+                batch_updates.clear()
+
+            processed_total += len(batch)
+            logging.info("Batch %d done. Processed so far: %d", batch_idx, processed_total)
+        finally:
+            await scraper.close()
+
+        # Pause between batches to be gentle with target site and Sheets API
+        if sleep_between_batches and processed_total < len(items):
+            try:
+                await asyncio.sleep(float(sleep_between_batches))
+            except Exception:
+                pass
+
+    if differences:
+        sheets.create_or_append_daily_report(differences, prefix=settings.daily_report_prefix)
+
+    logging.info("Statuses updated (async). Processed rows: %d, differences: %d", len(items), len(differences))
 
 
 def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[Any]]] ):
