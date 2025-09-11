@@ -259,7 +259,7 @@ def update_statuses(sheets: SheetsClient, scraper: InterScraper, start_row: int 
     logging.info("Statuses updated. Processed rows: %d, differences: %d", processed, len(differences))
 
 
-async def update_statuses_async(sheets: SheetsClient, headless: bool, start_row: int = 2, limit: int | None = None, max_concurrency: int = 3):
+async def update_statuses_async(sheets: SheetsClient, headless: bool, start_row: int = 2, limit: int | None = None, max_concurrency: int = 3, rps: float | None = None):
     records = sheets.read_main_records()
     headers = sheets.read_headers()
 
@@ -313,7 +313,7 @@ async def update_statuses_async(sheets: SheetsClient, headless: bool, start_row:
     try:
         # Fetch statuses concurrently
         tn_list = [tn for _, tn, _, _ in items]
-        results = await scraper.get_status_many(tn_list)
+        results = await scraper.get_status_many(tn_list, rps=rps)
         status_by_tn = {tn: raw for tn, raw in results}
 
         for (idx, tn, dropi_raw, dropi) in items:
@@ -365,7 +365,7 @@ async def update_statuses_async(sheets: SheetsClient, headless: bool, start_row:
         await scraper.close()
 
 
-def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[Any]]]):
+def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[Any]]] ):
     """Write only the exact cells that changed.
 
     Groups updates by column index and then splits into consecutive row-blocks,
@@ -383,6 +383,7 @@ def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[Any]]
                 continue
             by_col.setdefault(col_idx, []).append((row, val))
 
+    batched_payload: list[dict] = []
     for col_idx, items in by_col.items():
         # Sort by row
         items.sort(key=lambda x: x[0])
@@ -397,13 +398,20 @@ def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[Any]]
             values = [[v] for _, v in block]  # single column
             col_letter = chr(ord('A') + col_idx - 1)
             a1 = f"{col_letter}{start_row}:{col_letter}{end_row}"
-            sheets.update_range(a1, values)
+            batched_payload.append({"range": a1, "values": values})
 
         for r, v in items:
             if prev_row is None or r == prev_row + 1:
                 block.append((r, v))
             else:
                 flush_block()
+
+    # Send in chunks to respect API limits (e.g., 100 ranges per request)
+    if batched_payload:
+        CHUNK = 100
+        for i in range(0, len(batched_payload), CHUNK):
+            chunk = batched_payload[i:i+CHUNK]
+            sheets.values_batch_update(chunk)
                 block = [(r, v)]
             prev_row = r
         flush_block()
@@ -418,6 +426,7 @@ def main():
     parser.add_argument("--skip-drive", action="store_true", help="Skip Drive source ingestion and only update statuses from the existing sheet")
     parser.add_argument("--async", dest="use_async", action="store_true", help="Use async Playwright scraper with concurrency")
     parser.add_argument("--max-concurrency", type=int, default=3, help="Max concurrent browser pages when using --async")
+    parser.add_argument("--rps", type=float, default=None, help="Limit of requests per second when using --async (pacing task launches)")
     args = parser.parse_args()
 
     setup_logging()
@@ -486,6 +495,7 @@ def main():
                     start_row=args.start_row,
                     limit=args.limit,
                     max_concurrency=args.max_concurrency,
+                    rps=args.rps,
                 ))
             else:
                 update_statuses(sheets, scraper, start_row=args.start_row, limit=args.limit)

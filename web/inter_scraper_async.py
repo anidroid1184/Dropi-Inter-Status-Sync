@@ -16,10 +16,14 @@ class AsyncInterScraper:
     - Exposes get_status_many to process multiple guides concurrently.
     """
 
-    def __init__(self, headless: bool = True, max_concurrency: int = 3, slow_mo: int = 0):
+    def __init__(self, headless: bool = True, max_concurrency: int = 3, slow_mo: int = 0,
+                 retries: int = 2, timeout_ms: int = 30000, block_resources: bool = True):
         self._headless = headless
         self._max_concurrency = max(1, int(max_concurrency))
         self._slow_mo = slow_mo if headless else max(slow_mo, 100)
+        self._retries = max(0, int(retries))
+        self._timeout = int(timeout_ms)
+        self._block_resources = block_resources
         self._pw = None
         self.browser = None
         self._sem = asyncio.Semaphore(self._max_concurrency)
@@ -43,13 +47,13 @@ class AsyncInterScraper:
     async def _extract_status_from_page(self, page) -> str:
         # Wait basic load
         with suppress(PlaywrightTimeoutError):
-            await page.wait_for_load_state("domcontentloaded", timeout=15000)
+            await page.wait_for_load_state("domcontentloaded", timeout=self._timeout)
         # Anchor to the title and read the following bold text
         try:
             title = page.locator("css=div.content p.title-current-state").first
-            await title.wait_for(state="visible", timeout=15000)
+            await title.wait_for(state="visible", timeout=self._timeout)
             value = title.locator("xpath=following-sibling::p[contains(@class,'font-weight-600')][1]")
-            await value.wait_for(state="visible", timeout=15000)
+            await value.wait_for(state="visible", timeout=self._timeout)
             txt = (await value.inner_text()).strip()
             if txt:
                 return txt
@@ -58,14 +62,14 @@ class AsyncInterScraper:
         # Direct CSS fallback within the same content card
         with suppress(Exception):
             value2 = page.locator("css=div.content p.font-weight-600").first
-            await value2.wait_for(state="visible", timeout=5000)
+            await value2.wait_for(state="visible", timeout=min(5000, self._timeout))
             txt2 = (await value2.inner_text()).strip()
             if txt2:
                 return txt2
         # Last resort: novelty pill
         with suppress(Exception):
             novelty = page.locator("css=p.guide-WhitOut-Novelty").first
-            await novelty.wait_for(state="visible", timeout=3000)
+            await novelty.wait_for(state="visible", timeout=min(3000, self._timeout))
             txt3 = (await novelty.inner_text()).strip()
             if txt3:
                 return txt3
@@ -81,8 +85,22 @@ class AsyncInterScraper:
                 context = await self.browser.new_context(viewport={"width": 1280, "height": 800})
             else:
                 context = await self.browser.new_context(viewport=None)
+
+            # Block heavy resources to speed up
+            if self._block_resources:
+                async def _route_handler(route):
+                    try:
+                        if route.request.resource_type in {"image", "media", "font", "stylesheet"}:
+                            await route.abort()
+                        else:
+                            await route.continue_()
+                    except Exception:
+                        with suppress(Exception):
+                            await route.continue_()
+                await context.route("**/*", _route_handler)
+
             page = await context.new_page()
-            await page.goto("https://interrapidisimo.com/sigue-tu-envio/", timeout=45000, wait_until="domcontentloaded")
+            await page.goto("https://interrapidisimo.com/sigue-tu-envio/", timeout=max(45000, self._timeout), wait_until="domcontentloaded")
 
             # Try to accept cookie banners quickly
             with suppress(Exception):
@@ -92,7 +110,7 @@ class AsyncInterScraper:
             # Find the visible input (desktop/mobile)
             input_css = "#inputGuide:visible, #inputGuideMovil:visible, input.buscarGuiaInput:visible"
             loc = page.locator(input_css).first
-            await loc.wait_for(state="visible", timeout=15000)
+            await loc.wait_for(state="visible", timeout=self._timeout)
             await loc.scroll_into_view_if_needed()
             with suppress(Exception):
                 await loc.fill("")
@@ -100,7 +118,7 @@ class AsyncInterScraper:
 
             # Follow new page created by Enter
             try:
-                async with context.expect_page(timeout=20000) as new_page_info:
+                async with context.expect_page(timeout=self._timeout) as new_page_info:
                     await loc.press("Enter")
                 popup = await new_page_info.value
                 with suppress(Exception):
@@ -108,7 +126,7 @@ class AsyncInterScraper:
             except PlaywrightTimeoutError:
                 popup = None
                 with suppress(PlaywrightTimeoutError):
-                    await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                    await page.wait_for_load_state("domcontentloaded", timeout=self._timeout)
 
             target = popup if popup is not None else page
             return await self._extract_status_from_page(target)
@@ -126,13 +144,39 @@ class AsyncInterScraper:
                 if context:
                     await context.close()
 
-    async def get_status_many(self, tracking_numbers: Iterable[str]) -> List[Tuple[str, str]]:
+    async def get_status_many(self, tracking_numbers: Iterable[str], rps: float | None = None) -> List[Tuple[str, str]]:
         results: List[Tuple[str, str]] = []
 
         async def worker(tn: str):
             async with self._sem:
-                status = await self.get_status(tn)
-                results.append((tn, status))
+                # Retries with backoff
+                delay = 0.75
+                for attempt in range(self._retries + 1):
+                    status = await self.get_status(tn)
+                    if status:
+                        results.append((tn, status))
+                        break
+                    if attempt < self._retries:
+                        await asyncio.sleep(delay)
+                        delay *= 2
+                else:
+                    # After retries, record empty string to keep row mapping intact
+                    results.append((tn, ""))
+        tasks = []
+        if rps and rps > 0:
+            interval = 1.0 / float(rps)
+            start = asyncio.get_event_loop().time()
+            for i, tn in enumerate(tracking_numbers):
+                # Stagger task starts to respect RPS
+                async def delayed_launch(tn=tn, i=i):
+                    target_time = start + i * interval
+                    now = asyncio.get_event_loop().time()
+                    if target_time > now:
+                        await asyncio.sleep(target_time - now)
+                    await worker(tn)
+                tasks.append(asyncio.create_task(delayed_launch()))
+        else:
+            tasks = [asyncio.create_task(worker(tn)) for tn in tracking_numbers]
 
-        await asyncio.gather(*(worker(tn) for tn in tracking_numbers))
+        await asyncio.gather(*tasks)
         return results

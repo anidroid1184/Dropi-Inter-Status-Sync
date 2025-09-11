@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional, Tuple
 import gspread
 import logging
 from datetime import datetime
+import time
 
 
 class SheetsClient:
@@ -50,7 +51,43 @@ class SheetsClient:
         return len(rows)
 
     def update_range(self, a1_range: str, values: List[List[Any]]):
-        self.sheet().update(a1_range, values)
+        # Simple retry with backoff to handle 429 rate limit bursts
+        delay = 1.0
+        for attempt in range(5):
+            try:
+                self.sheet().update(a1_range, values)
+                return
+            except Exception as e:
+                msg = str(e)
+                if "429" in msg or "quota" in msg.lower():
+                    logging.warning("Sheets update_range throttled (attempt %d): %s", attempt + 1, msg)
+                    time.sleep(delay)
+                    delay = min(delay * 2, 30)
+                    continue
+                raise
+
+    def values_batch_update(self, data: List[Dict[str, Any]], value_input_option: str = "RAW"):
+        """Perform a single batch update for many disjoint ranges.
+
+        data items: {"range": A1, "values": [[...], ...]}
+        """
+        body = {
+            "valueInputOption": value_input_option,
+            "data": data,
+        }
+        delay = 1.0
+        for attempt in range(5):
+            try:
+                # gspread exposes Spreadsheet.values_batch_update
+                return self.spreadsheet.values_batch_update(body)
+            except Exception as e:
+                msg = str(e)
+                if "429" in msg or "quota" in msg.lower():
+                    logging.warning("Sheets values_batch_update throttled (attempt %d): %s", attempt + 1, msg)
+                    time.sleep(delay)
+                    delay = min(delay * 2, 30)
+                    continue
+                raise
 
     # --- Daily report helpers ---
     def create_or_append_daily_report(self, rows: List[List[Any]], prefix: str = "Informe_") -> str:
