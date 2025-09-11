@@ -5,8 +5,10 @@ import logging
 import os
 import csv
 import json
+import asyncio
 from datetime import datetime
 from typing import List, Dict, Any
+import threading
 
 import gspread
 import pandas as pd
@@ -18,6 +20,7 @@ from services.drive_client import DriveClient
 from services.sheets_client import SheetsClient
 from services.tracker_service import TrackerService
 from web.inter_scraper import InterScraper
+from web.inter_scraper_async import AsyncInterScraper
 from utils.checkpoints import load_checkpoint, save_checkpoint
 
 
@@ -224,10 +227,11 @@ def update_statuses(sheets: SheetsClient, scraper: InterScraper, start_row: int 
             new_status,
         )
 
-        # Queue update for this row: ONLY STATUS TRACKING column
-        row_updates = [None] * web_col
-        row_updates[web_col - 1] = web_status
-        batch_updates.append((idx, row_updates))
+        # Queue update ONLY if we have a non-empty status to avoid overwriting with blanks
+        if web_status:
+            row_updates = [None] * web_col
+            row_updates[web_col - 1] = web_status
+            batch_updates.append((idx, row_updates))
 
         if dropi != web_status:
             differences.append([
@@ -255,42 +259,154 @@ def update_statuses(sheets: SheetsClient, scraper: InterScraper, start_row: int 
     logging.info("Statuses updated. Processed rows: %d, differences: %d", processed, len(differences))
 
 
-def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[Any]]]):
-    # Determine the minimal and maximal 1-based column indices that have any update,
-    # so we don't overwrite earlier columns unintentionally.
-    def non_none_indices(arr: list[Any]) -> list[int]:
-        return [i for i, v in enumerate(arr, start=1) if v is not None]
+async def update_statuses_async(sheets: SheetsClient, headless: bool, start_row: int = 2, limit: int | None = None, max_concurrency: int = 3):
+    records = sheets.read_main_records()
+    headers = sheets.read_headers()
 
-    updated_indices = []
-    for _, arr in batch_updates:
-        updated_indices.extend(non_none_indices(arr))
-    if not updated_indices:
+    # Ensure required headers
+    required_headers = ["ID DROPI", "ID TRACKING", "STATUS DROPI", "STATUS TRACKING", "Alerta"]
+    sheets.ensure_headers(required_headers)
+    headers = sheets.read_headers()
+
+    tracking_col = headers.index("ID TRACKING") + 1
+    dropi_col = headers.index("STATUS DROPI") + 1
+    web_col = headers.index("STATUS TRACKING") + 1
+
+    batch_updates = []
+    differences = []
+
+    processed = 0
+    status_log_path = _init_status_log()
+
+    # Build list of items to process
+    items: list[tuple[int, str, str, str]] = []  # (row, tracking_number, dropi_raw, dropi_norm)
+    for idx, record in enumerate(records, start=2):
+        if idx < start_row:
+            continue
+        if limit is not None and processed >= limit:
+            break
+        tracking_number = str(record.get("ID TRACKING", "")).strip()
+        if not tracking_number:
+            continue
+
+        dropi_raw = str(record.get("STATUS DROPI", "")).strip()
+        dropi = TrackerService.normalize_status(dropi_raw)
+        web_norm = str(record.get("STATUS TRACKING", "")).strip()
+
+        # Skip if terminal or ineligible
+        if TrackerService.terminal(dropi, web_norm or ""):
+            logging.info("Terminal status, skip: %s", tracking_number)
+            continue
+        if not TrackerService.can_query(dropi):
+            logging.info("Not eligible to query (DROPi=%s): %s", dropi, tracking_number)
+            continue
+
+        items.append((idx, tracking_number, dropi_raw, dropi))
+        processed += 1
+
+    if not items:
+        logging.info("No eligible rows to process")
         return
 
-    min_col_idx = min(updated_indices)
-    max_col_idx = max(updated_indices)
+    scraper = AsyncInterScraper(headless=headless, max_concurrency=max_concurrency)
+    await scraper.start()
+    try:
+        # Fetch statuses concurrently
+        tn_list = [tn for _, tn, _, _ in items]
+        results = await scraper.get_status_many(tn_list)
+        status_by_tn = {tn: raw for tn, raw in results}
 
-    # Build values matrix only for [min_col_idx, max_col_idx] inclusive
-    min_row = min(r for r, _ in batch_updates)
-    max_row = max(r for r, _ in batch_updates)
-    values: list[list[Any]] = []
-    for r in range(min_row, max_row + 1):
-        match = next((arr for rr, arr in batch_updates if rr == r), None)
-        if match is None:
-            # Fill with blanks across the slice width
-            values.append([""] * (max_col_idx - min_col_idx + 1))
-        else:
-            # Slice the row to only the updated range and replace None with ""
-            slice_vals = []
-            for idx in range(min_col_idx - 1, max_col_idx):
-                v = match[idx] if idx < len(match) else None
-                slice_vals.append("" if v is None else v)
-            values.append(slice_vals)
+        for (idx, tn, dropi_raw, dropi) in items:
+            web_status_raw = status_by_tn.get(tn, "")
+            exp = TrackerService.explain_normalization(web_status_raw)
+            web_status = exp["status"]
+            via = exp.get("via", "")
+            new_status = ""
+            if via not in {"mapping", "override"}:
+                new_status = (web_status_raw or "").strip()
+            _update_status_catalog(web_status_raw or "", via)
 
-    start_col_letter = chr(ord('A') + min_col_idx - 1)
-    end_col_letter = chr(ord('A') + max_col_idx - 1)
-    a1 = f"{start_col_letter}{min_row}:{end_col_letter}{max_row}"
-    sheets.update_range(a1, values)
+            alerta = TrackerService.compute_alert(dropi, web_status)
+
+            _append_status_log(
+                status_log_path,
+                tn,
+                dropi_raw,
+                dropi,
+                web_status_raw or "",
+                web_status,
+                alerta,
+                via,
+                new_status,
+            )
+
+            # Only write if we have a non-empty normalized status
+            if web_status:
+                row_updates = [None] * web_col
+                row_updates[web_col - 1] = web_status
+                batch_updates.append((idx, row_updates))
+
+            if dropi != web_status:
+                differences.append([
+                    tn,
+                    dropi,
+                    web_status,
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ])
+
+        if batch_updates:
+            _flush_batch(sheets, batch_updates)
+
+        if differences:
+            sheets.create_or_append_daily_report(differences, prefix=settings.daily_report_prefix)
+
+        logging.info("Statuses updated (async). Processed rows: %d, differences: %d", len(items), len(differences))
+    finally:
+        await scraper.close()
+
+
+def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[Any]]]):
+    """Write only the exact cells that changed.
+
+    Groups updates by column index and then splits into consecutive row-blocks,
+    updating each block separately. This avoids clearing cells in rows that are
+    not part of the batch.
+    """
+    if not batch_updates:
+        return
+
+    # Build mapping: col_idx -> list[(row, value)]
+    by_col: dict[int, list[tuple[int, Any]]] = {}
+    for row, arr in batch_updates:
+        for col_idx, val in enumerate(arr, start=1):
+            if val is None:
+                continue
+            by_col.setdefault(col_idx, []).append((row, val))
+
+    for col_idx, items in by_col.items():
+        # Sort by row
+        items.sort(key=lambda x: x[0])
+        # Group into consecutive row blocks
+        block: list[tuple[int, Any]] = []
+        prev_row = None
+        def flush_block():
+            if not block:
+                return
+            start_row = block[0][0]
+            end_row = block[-1][0]
+            values = [[v] for _, v in block]  # single column
+            col_letter = chr(ord('A') + col_idx - 1)
+            a1 = f"{col_letter}{start_row}:{col_letter}{end_row}"
+            sheets.update_range(a1, values)
+
+        for r, v in items:
+            if prev_row is None or r == prev_row + 1:
+                block.append((r, v))
+            else:
+                flush_block()
+                block = [(r, v)]
+            prev_row = r
+        flush_block()
 
 
 
@@ -300,6 +416,8 @@ def main():
     parser.add_argument("--limit", type=int, default=None, help="Limit number of rows to process")
     parser.add_argument("--dry-run", action="store_true", help="Run without writing changes")
     parser.add_argument("--skip-drive", action="store_true", help="Skip Drive source ingestion and only update statuses from the existing sheet")
+    parser.add_argument("--async", dest="use_async", action="store_true", help="Use async Playwright scraper with concurrency")
+    parser.add_argument("--max-concurrency", type=int, default=3, help="Max concurrent browser pages when using --async")
     args = parser.parse_args()
 
     setup_logging()
@@ -327,7 +445,50 @@ def main():
             logging.info("--skip-drive enabled: skipping source ingestion from Drive")
 
         if not args.dry_run:
-            update_statuses(sheets, scraper, start_row=args.start_row, limit=args.limit)
+            if args.use_async:
+                # Safe async runner: if there is an active loop (e.g. IDE), run the coroutine in a
+                # dedicated thread with its own loop; otherwise use asyncio.run.
+                def _run_coro_in_thread(coro):
+                    result = {
+                        "exc": None,
+                    }
+
+                    def _runner():
+                        try:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            loop.run_until_complete(coro)
+                        except Exception as e:
+                            result["exc"] = e
+                        finally:
+                            try:
+                                loop.close()
+                            except Exception:
+                                pass
+
+                    try:
+                        running = asyncio.get_running_loop()
+                    except RuntimeError:
+                        running = None
+
+                    if running and running.is_running():
+                        t = threading.Thread(target=_runner, daemon=True)
+                        t.start()
+                        t.join()
+                        if result["exc"]:
+                            raise result["exc"]
+                    else:
+                        asyncio.run(coro)
+
+                _run_coro_in_thread(update_statuses_async(
+                    sheets,
+                    settings.headless,
+                    start_row=args.start_row,
+                    limit=args.limit,
+                    max_concurrency=args.max_concurrency,
+                ))
+            else:
+                update_statuses(sheets, scraper, start_row=args.start_row, limit=args.limit)
         else:
             logging.info("Dry-run mode: skipping status updates")
         return 0

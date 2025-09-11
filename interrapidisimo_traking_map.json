@@ -11,7 +11,8 @@
     "envio pendiente por admitir",
     "admitido",
     "recibido en oficina",
-    "recibimos tu envío"
+    "recibimos tu envío",
+    "ENVÍO PENDIENTE POR ADMITIR"
   ],
   "EN_PROCESAMIENTO": [
     "en procesamiento",
@@ -37,14 +38,17 @@
     "viajando a tu destino",
     "traslado entre centros",
     "salió de centro logístico",
-    "salio de centro logistico"
+    "salio de centro logistico",
+    "En Centro Logístico de Tránsito"
   ],
   "EN_BODEGA_DESTINO": [
     "en centro logístico destino",
     "en centro logistico destino",
     "llegó al centro logístico destino",
     "llego al centro logistico destino",
-    "en ciudad de destino"
+    "en ciudad de destino",
+    "En Centro Logístico Destino",
+    "Retorno a Centro Logístico Destino"
   ],
   "EN_REPARTO": [
     "en reparto",
@@ -58,8 +62,11 @@
     "no fue posible entregar",
     "destinatario ausente",
     "no había quien recibiera",
+    "direccion cerrada",
     "dirección cerrada",
-    "no se encontró dirección"
+    "no se encontró dirección",
+    "no se encontro direccion",
+    "No logramos hacer la entrega"
   ],
   "RECLAME_EN_OFICINA": [
     "reclame en oficina",
@@ -74,12 +81,14 @@
     "ya puedes recoger tu envío",
     "ya puedes recoger tu envio",
     "puede reclamar su envío",
-    "puede reclamar su envio"
+    "puede reclamar su envio",
+    "Ya puedes recoger tu envío"
   ],
   "ENTREGADO": [
     "entregado",
     "tu envío fue entregado",
     "tu envio fue entregado",
+    "Tú envío fue entregado",
     "recibido",
     "entregado a portería",
     "entregado a tercero autorizado",
@@ -94,7 +103,10 @@
     "retorno a origen",
     "retornado a origen",
     "regresado a origen",
-    "devuelto al remitente"
+    "devuelto al remitente",
+    "Tu envío Fue devuelto",
+    "tu envío fue devuelto",
+    "tu envio fue devuelto"
   ],
   "DEVOLUCION": [
     "devolucion",
