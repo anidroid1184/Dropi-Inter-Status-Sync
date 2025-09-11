@@ -405,6 +405,9 @@ def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[Any]]
                 block.append((r, v))
             else:
                 flush_block()
+                block = [(r, v)]
+            prev_row = r
+        flush_block()
 
     # Send in chunks to respect API limits (e.g., 100 ranges per request)
     if batched_payload:
@@ -412,9 +415,6 @@ def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[Any]]
         for i in range(0, len(batched_payload), CHUNK):
             chunk = batched_payload[i:i+CHUNK]
             sheets.values_batch_update(chunk)
-                block = [(r, v)]
-            prev_row = r
-        flush_block()
 
 
 
