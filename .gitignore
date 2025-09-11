@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+
+# Credentials and local data
+credentials.json
+checkpoint.json
+logs/
+
+# OS / IDE
+.DS_Store
+*.code-workspace
+
+.env

@@ -1,0 +1,130 @@
+{
+  "GUIA_GENERADA": [
+    "guia_generada",
+    "guia generada",
+    "guía generada",
+    "preparado para transportadora",
+    "preparado_para_transportadora",
+    "pendiente orden creada automaticamente",
+    "pendiente orden creada",
+    "guía generada transportadora",
+    "guia generada transportadora"
+  ],
+  "EN_PROCESAMIENTO": [
+    "en procesamiento",
+    "en trámite",
+    "procesando",
+    "pendiente de envío",
+    "en espera de despacho"
+  ],
+  "EN_BODEGA_TRANSPORTADORA": [
+    "en bodega transportadora",
+    "pedido ha ingresado en bodega de transportadora",
+    "ingresado en bodega transportadora"
+  ],
+  "EN_TRANSITO": [
+    "en transito",
+    "en tránsito",
+    "transito",
+    "tránsito",
+    "ruta",
+    "camino",
+    "centro",
+    "en tránsito plataforma",
+    "en tránsito (Dropi)",
+    "despachada",
+    "despachada ciudad destino"
+  ],
+  "EN_BODEGA_DESTINO": [
+    "en bodega destino",
+    "llegó a destino e ingresa al centro logístico"
+  ],
+  "EN_REPARTO": [
+    "en reparto",
+    "en camino hacia ti",
+    "en ruta de entrega",
+    "salió a entrega",
+    "salio a entrega",
+    "en espera de ruta",
+    "espera de ruta doméstica"
+  ],
+  "INTENTO_DE_ENTREGA": [
+    "intento de entrega",
+    "intento_de_entrega"
+  ],
+  "ENTREGADO": [
+    "entregado",
+    "tu envío fue entregado",
+    "tu envio fue entregado",
+    "recibido",
+    "entregado a portería",
+    "entregado a tercero autorizado",
+    "entregada (en proceso de digitalización)",
+    "entregada digitalizada"
+  ],
+  "ENTREGADO_A_TRANSPORTADORA": [
+    "entregado a transportadora"
+  ],
+  "DEVUELTO": [
+    "devuelto",
+    "devolucion",
+    "devolución",
+    "retorno",
+    "devuelto al remitente",
+    "retornado",
+    "regresado a origen"
+  ],
+  "REENVIO": [
+    "reenvio",
+    "reenvío"
+  ],
+  "REEXPEDICION": [
+    "reexpedición",
+    "en reexpedición"
+  ],
+  "EN_AGENCIA": [
+    "agencia",
+    "recoger",
+    "disponible para recoger",
+    "listo para recoger",
+    "retirar en oficina",
+    "ya puedes recoger tu envío",
+    "ya puedes recoger tu envio",
+    "puede reclamar su envío",
+    "puede reclamar su envio"
+  ],
+  "RECLAME_EN_OFICINA": [
+    "reclame en oficina",
+    "reclamar en oficina"
+  ],
+  "NOVEDAD": [
+    "novedad",
+    "retenido por novedad",
+    "dirección incorrecta",
+    "direccion incorrecta",
+    "destinatario ausente",
+    "documentación pendiente",
+    "incidencia",
+    "problema en la entrega",
+    "en espera de RX",
+    "espera de RX"
+  ],
+  "PENDIENTE": [
+    "pendiente"
+  ],
+  "TELEMERCADEO": [
+    "telemercadeo"
+  ],
+  "RECHAZADO": [
+    "rechazado",
+    "rechazado (Dropi)"
+  ],
+  "CANCELADO": [
+    "cancelado",
+    "guía anulada",
+    "orden cancelada"
+  ],
+  "INDEMNIZADO": [
+    "indemnizada"
+  ]
+}

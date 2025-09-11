@@ -1,0 +1,151 @@
+{
+  "SIN_NOVEDAD": [
+    "sin novedad"
+  ],
+  "GUIA_GENERADA": [
+    "guia generada",
+    "guía generada",
+    "pendiente por admitir",
+    "pendiente de admisión",
+    "envío pendiente por admitir",
+    "envio pendiente por admitir",
+    "admitido",
+    "recibido en oficina",
+    "recibimos tu envío"
+  ],
+  "EN_PROCESAMIENTO": [
+    "en procesamiento",
+    "en trámite",
+    "procesando",
+    "clasificación",
+    "clasificando"
+  ],
+  "EN_BODEGA_TRANSPORTADORA": [
+    "en bodega transportadora",
+    "ingresó a bodega de transportadora",
+    "ingreso a bodega de transportadora",
+    "en centro logístico origen",
+    "en centro logistico origen"
+  ],
+  "EN_TRANSITO": [
+    "en tránsito",
+    "en transito",
+    "tránsito",
+    "transito",
+    "en camino",
+    "ruta",
+    "viajando a tu destino",
+    "traslado entre centros",
+    "salió de centro logístico",
+    "salio de centro logistico"
+  ],
+  "EN_BODEGA_DESTINO": [
+    "en centro logístico destino",
+    "en centro logistico destino",
+    "llegó al centro logístico destino",
+    "llego al centro logistico destino",
+    "en ciudad de destino"
+  ],
+  "EN_REPARTO": [
+    "en reparto",
+    "en ruta de entrega",
+    "salió a entrega",
+    "salio a entrega",
+    "en camino hacia ti"
+  ],
+  "INTENTO_DE_ENTREGA": [
+    "intento de entrega",
+    "no fue posible entregar",
+    "destinatario ausente",
+    "no había quien recibiera",
+    "dirección cerrada",
+    "no se encontró dirección"
+  ],
+  "RECLAME_EN_OFICINA": [
+    "reclame en oficina",
+    "reclamar en oficina",
+    "pendiente por reclamar"
+  ],
+  "EN_AGENCIA": [
+    "agencia",
+    "disponible para recoger",
+    "listo para recoger",
+    "retirar en oficina",
+    "ya puedes recoger tu envío",
+    "ya puedes recoger tu envio",
+    "puede reclamar su envío",
+    "puede reclamar su envio"
+  ],
+  "ENTREGADO": [
+    "entregado",
+    "tu envío fue entregado",
+    "tu envio fue entregado",
+    "recibido",
+    "entregado a portería",
+    "entregado a tercero autorizado",
+    "entregado en oficina"
+  ],
+  "ENTREGADO_A_TRANSPORTADORA": [
+    "entregado a transportadora",
+    "entregado a la transportadora"
+  ],
+  "DEVUELTO": [
+    "devuelto",
+    "retorno a origen",
+    "retornado a origen",
+    "regresado a origen",
+    "devuelto al remitente"
+  ],
+  "DEVOLUCION": [
+    "devolucion",
+    "devolución"
+  ],
+  "REENVIO": [
+    "reenvio",
+    "reenvío",
+    "re despachado",
+    "re-despachado"
+  ],
+  "REEXPEDICION": [
+    "reexpedición",
+    "en reexpedición"
+  ],
+  "NOVEDAD": [
+    "novedad",
+    "retenido por novedad",
+    "dirección incorrecta",
+    "direccion incorrecta",
+    "documentación pendiente",
+    "documentacion pendiente",
+    "pago pendiente",
+    "mercancía dañada",
+    "mercancia dañada",
+    "incidencia",
+    "problema en la entrega"
+  ],
+  "REZAGO": [
+    "en rezago",
+    "envío en rezago",
+    "envio en rezago",
+    "bodega de rezagos"
+  ],
+  "PENDIENTE": [
+    "pendiente"
+  ],
+  "RECHAZADO": [
+    "rechazado"
+  ],
+  "TELEMERCADEO": [
+    "telemercadeo"
+  ],
+  "CANCELADO": [
+    "cancelado",
+    "guía anulada",
+    "guia anulada",
+    "orden cancelada"
+  ],
+  "INDEMNIZADO": [
+    "indemnizado",
+    "indemnizada"
+  ]
+}
