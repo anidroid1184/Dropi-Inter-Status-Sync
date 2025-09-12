@@ -275,6 +275,7 @@ async def update_statuses_async(
     batch_size: int = 5000,
     sleep_between_batches: float = 20.0,
     only_empty: bool = False,
+    ignore_eligibility: bool = False,
 ):
     # Use resilient reader to avoid stopping at first blank row
     records = sheets.read_main_records_resilient()
@@ -297,6 +298,8 @@ async def update_statuses_async(
 
     # Build list of items to process
     items: list[tuple[int, str, str, str]] = []  # (row, tracking_number, dropi_raw, dropi_norm)
+    total_rows = 0
+    candidates = 0
     for idx, record in enumerate(records, start=2):
         if idx < start_row:
             continue
@@ -305,6 +308,7 @@ async def update_statuses_async(
         tracking_number = str(record.get("ID TRACKING", "")).strip()
         if not tracking_number:
             continue
+        total_rows += 1
 
         dropi_raw = str(record.get("STATUS DROPI", "")).strip()
         dropi = TrackerService.normalize_status(dropi_raw)
@@ -312,13 +316,15 @@ async def update_statuses_async(
         if only_empty and web_norm:
             continue
 
-        # Skip if terminal or ineligible
-        if TrackerService.terminal(dropi, web_norm or ""):
-            logging.info("Terminal status, skip: %s", tracking_number)
-            continue
-        if not TrackerService.can_query(dropi):
-            logging.info("Not eligible to query (DROPi=%s): %s", dropi, tracking_number)
-            continue
+        # Eligibility filtering
+        if not ignore_eligibility:
+            if TrackerService.terminal(dropi, web_norm or ""):
+                logging.info("Terminal status, skip: %s", tracking_number)
+                continue
+            if not TrackerService.can_query(dropi):
+                logging.info("Not eligible to query (DROPi=%s): %s", dropi, tracking_number)
+                continue
+        candidates += 1
 
         items.append((idx, tracking_number, dropi_raw, dropi))
         processed += 1
@@ -326,6 +332,8 @@ async def update_statuses_async(
     if not items:
         logging.info("No eligible rows to process")
         return
+    logging.info("Selection summary | rows_scanned_from_start: %d | candidates_selected: %d | only_empty=%s | ignore_eligibility=%s",
+                 total_rows, candidates, str(only_empty), str(ignore_eligibility))
 
     # Process in batches to keep browser fresh and reduce blanks over long runs
     def chunk(seq, size):
@@ -340,6 +348,7 @@ async def update_statuses_async(
             max_concurrency=max_concurrency,
             retries=retries,
             timeout_ms=timeout_ms,
+            block_resources=False,
         )
         await scraper.start()
         try:
@@ -477,6 +486,8 @@ def main():
     parser.add_argument("--async", dest="use_async", action="store_true", help="Use async Playwright scraper with concurrency")
     parser.add_argument("--max-concurrency", type=int, default=3, help="Max concurrent browser pages when using --async")
     parser.add_argument("--rps", type=float, default=None, help="Limit of requests per second when using --async (pacing task launches)")
+    parser.add_argument("--only-empty", action="store_true", help="Process only rows where STATUS TRACKING is empty")
+    parser.add_argument("--ignore-eligibility", action="store_true", help="Do not skip rows by business rules (terminal/can_query); useful for backfilling")
     args = parser.parse_args()
 
     setup_logging()
@@ -546,6 +557,8 @@ def main():
                     limit=args.limit,
                     max_concurrency=args.max_concurrency,
                     rps=args.rps,
+                    only_empty=args.only_empty,
+                    ignore_eligibility=args.ignore_eligibility,
                 ))
             else:
                 update_statuses(sheets, scraper, start_row=args.start_row, limit=args.limit)
