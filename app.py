@@ -19,7 +19,6 @@ from logging_setup import setup_logging
 from services.drive_client import DriveClient
 from services.sheets_client import SheetsClient
 from services.tracker_service import TrackerService
-from scripts.fill_missing_statuses import fill_missing_async
 from web.inter_scraper import InterScraper
 from web.inter_scraper_async import AsyncInterScraper
 from utils.checkpoints import load_checkpoint, save_checkpoint
@@ -478,7 +477,6 @@ def main():
     parser.add_argument("--async", dest="use_async", action="store_true", help="Use async Playwright scraper with concurrency")
     parser.add_argument("--max-concurrency", type=int, default=3, help="Max concurrent browser pages when using --async")
     parser.add_argument("--rps", type=float, default=None, help="Limit of requests per second when using --async (pacing task launches)")
-    parser.add_argument("--post-pass", action="store_true", help="After async scraping, run a post-pass to fill empty STATUS TRACKING cells")
     args = parser.parse_args()
 
     setup_logging()
@@ -549,20 +547,6 @@ def main():
                     max_concurrency=args.max_concurrency,
                     rps=args.rps,
                 ))
-                if args.post_pass:
-                    # Run post-pass to fill remaining empty STATUS TRACKING cells with same concurrency settings
-                    _run_coro_in_thread(fill_missing_async(
-                        sheets,
-                        settings.headless,
-                        start_row=args.start_row,
-                        end_row=None,
-                        max_concurrency=args.max_concurrency,
-                        rps=args.rps,
-                        retries=2,
-                        timeout_ms=30000,
-                        batch_size=2000,
-                        sleep_between_batches=10.0,
-                    ))
             else:
                 update_statuses(sheets, scraper, start_row=args.start_row, limit=args.limit)
         else:

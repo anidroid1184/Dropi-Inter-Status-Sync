@@ -28,7 +28,7 @@ async def fill_missing_async(
     rps: float | None = None,
     retries: int = 2,
     timeout_ms: int = 30000,
-    batch_size: int = 2000,
+    batch_size: int = 200,
     sleep_between_batches: float = 10.0,
 ) -> None:
     """Find rows with empty STATUS TRACKING and re-scrape only those.
@@ -59,6 +59,7 @@ async def fill_missing_async(
         if tn and not web:
             items.append((idx, tn))
 
+    logging.info("Post-pass candidates (empty STATUS TRACKING): %d", len(items))
     if not items:
         logging.info("No empty STATUS TRACKING cells to fill.")
         return
@@ -76,6 +77,7 @@ async def fill_missing_async(
             max_concurrency=max_concurrency,
             retries=retries,
             timeout_ms=timeout_ms,
+            block_resources=False,
         )
         await scraper.start()
         try:
@@ -106,6 +108,39 @@ async def fill_missing_async(
 
             processed_total += len(batch)
             logging.info("Post-pass batch %d done. Processed so far: %d", batch_idx, processed_total)
+        except Exception as e:
+            # If browser crashed (TargetClosedError), try smaller chunks sequentially
+            logging.exception("Post-pass batch %d failed, retrying in smaller chunks due to: %s", batch_idx, e)
+            try:
+                sub_size = max(25, int(len(batch) / 10))
+                for sub_idx, sub in enumerate(chunk(batch, sub_size), start=1):
+                    logging.info("Retry sub-batch %d.%d with %d items", batch_idx, sub_idx, len(sub))
+                    sub_scraper = AsyncInterScraper(
+                        headless=headless,
+                        max_concurrency=min(2, max_concurrency),
+                        retries=max(1, retries),
+                        timeout_ms=timeout_ms,
+                        block_resources=False,
+                    )
+                    await sub_scraper.start()
+                    try:
+                        tn_list = [tn for _, tn in sub]
+                        results = await sub_scraper.get_status_many(tn_list, rps=(rps or 0.5))
+                        status_by_tn = {tn: raw for tn, raw in results}
+                        batch_updates: list[tuple[int, list[object]]] = []
+                        for (row_idx, tn) in sub:
+                            raw = (status_by_tn.get(tn) or "").strip()
+                            if raw:
+                                row_updates = [None] * web_col
+                                row_updates[web_col - 1] = raw
+                                batch_updates.append((row_idx, row_updates))
+                        if batch_updates:
+                            _flush_batch(sheets, batch_updates)
+                    finally:
+                        with suppress(Exception):
+                            await sub_scraper.close()
+            except Exception as e2:
+                logging.exception("Sub-batch retry also failed: %s", e2)
         finally:
             with suppress(Exception):
                 await scraper.close()
