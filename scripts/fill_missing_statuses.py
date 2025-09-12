@@ -14,8 +14,8 @@ if PROJECT_ROOT not in sys.path:
 
 from config import settings
 from logging_setup import setup_logging
-from app import load_credentials, _flush_batch  # reuse batch writer
 from services.sheets_client import SheetsClient
+from oauth2client.service_account import ServiceAccountCredentials
 from web.inter_scraper_async import AsyncInterScraper
 
 
@@ -149,6 +149,67 @@ def run_coroutine_safely(coro):
             raise result["exc"]
     else:
         asyncio.run(coro)
+
+
+def load_credentials() -> ServiceAccountCredentials:
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/drive.file",
+    ]
+    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+    return creds
+
+
+def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[object]]]):
+    """Write only the exact cells that changed (single-column updates batched).
+
+    This duplicates the logic from app._flush_batch to avoid circular imports.
+    """
+    if not batch_updates:
+        return
+
+    # Build mapping: col_idx -> list[(row, value)]
+    by_col: dict[int, list[tuple[int, object]]] = {}
+    for row, arr in batch_updates:
+        for col_idx, val in enumerate(arr, start=1):
+            if val is None:
+                continue
+            by_col.setdefault(col_idx, []).append((row, val))
+
+    batched_payload: list[dict] = []
+    for col_idx, items in by_col.items():
+        # Sort by row
+        items.sort(key=lambda x: x[0])
+        # Group into consecutive row blocks
+        block: list[tuple[int, object]] = []
+        prev_row = None
+
+        def flush_block():
+            if not block:
+                return
+            start_row = block[0][0]
+            end_row = block[-1][0]
+            values = [[v] for _, v in block]  # single column
+            col_letter = chr(ord('A') + col_idx - 1)
+            a1 = f"{col_letter}{start_row}:{col_letter}{end_row}"
+            batched_payload.append({"range": a1, "values": values})
+
+        for r, v in items:
+            if prev_row is None or r == prev_row + 1:
+                block.append((r, v))
+            else:
+                flush_block()
+                block = [(r, v)]
+            prev_row = r
+        flush_block()
+
+    # Send in chunks to respect API limits (e.g., 100 ranges per request)
+    if batched_payload:
+        CHUNK = 100
+        for i in range(0, len(batched_payload), CHUNK):
+            chunk = batched_payload[i:i+CHUNK]
+            sheets.values_batch_update(chunk)
 
 
 def main() -> int:
