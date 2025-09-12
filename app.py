@@ -273,6 +273,7 @@ async def update_statuses_async(
     timeout_ms: int = 30000,
     batch_size: int = 5000,
     sleep_between_batches: float = 20.0,
+    only_empty: bool = False,
 ):
     records = sheets.read_main_records()
     headers = sheets.read_headers()
@@ -306,6 +307,8 @@ async def update_statuses_async(
         dropi_raw = str(record.get("STATUS DROPI", "")).strip()
         dropi = TrackerService.normalize_status(dropi_raw)
         web_norm = str(record.get("STATUS TRACKING", "")).strip()
+        if only_empty and web_norm:
+            continue
 
         # Skip if terminal or ineligible
         if TrackerService.terminal(dropi, web_norm or ""):

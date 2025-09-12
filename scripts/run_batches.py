@@ -53,17 +53,21 @@ def run_coro(coro) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run Interrapidísimo scraping in sequential 5k batches")
+    parser = argparse.ArgumentParser(description="Run Interrapidísimo scraping in sequential batches with a second pass to fill blanks")
     parser.add_argument("--start-row", type=int, default=2, help="Fila inicial (1-based, usual 2)")
     parser.add_argument("--end-row", type=int, default=None, help="Fila final (incluida). Si no se pasa, usa tamaño total de la hoja")
-    parser.add_argument("--chunk-size", type=int, default=5000, help="Tamaño de cada lote (default 5000)")
+    parser.add_argument("--chunk-size", type=int, default=1000, help="Tamaño de cada lote (default 1000)")
 
     parser.add_argument("--max-concurrency", type=int, default=3)
     parser.add_argument("--rps", type=float, default=1.0)
     parser.add_argument("--retries", type=int, default=3)
     parser.add_argument("--timeout-ms", dest="timeout_ms", type=int, default=35000)
     parser.add_argument("--headless", type=bool_arg, default=True)
-    parser.add_argument("--sleep-between", type=float, default=20.0, help="Segundos entre lotes")
+    parser.add_argument("--sleep-between", type=float, default=10.0, help="Segundos entre lotes")
+    parser.add_argument("--second-pass", type=bool_arg, default=True, help="Hacer segunda pasada solo para celdas vacías dentro de cada lote")
+    parser.add_argument("--second-pass-rps", type=float, default=None, help="RPS para la segunda pasada (si no se pasa, usa --rps o 0.8)")
+    parser.add_argument("--second-pass-retries", type=int, default=None, help="Retrintentos para segunda pasada (si no se pasa, usa --retries")
+    parser.add_argument("--second-pass-timeout-ms", type=int, default=None, help="Timeout ms para segunda pasada (si no se pasa, usa --timeout-ms")
 
     args = parser.parse_args()
 
@@ -94,7 +98,7 @@ def main() -> int:
 
     for i, (b_start, b_end) in enumerate(batches, start=1):
         logging.info("Batch %d/%d: rows %d..%d", i, len(batches), b_start, b_end)
-        # Call async updater restricted to this range
+        # Primera pasada normal del lote
         run_coro(update_statuses_async(
             sheets,
             args.headless,
@@ -106,6 +110,24 @@ def main() -> int:
             retries=args.retries,
             timeout_ms=args.timeout_ms,
         ))
+        # Segunda pasada para solo vacíos (si está activada)
+        if args.second_pass:
+            sp_rps = args.second_pass_rps if args.second_pass_rps is not None else (args.rps if args.rps is not None else 0.8)
+            sp_retries = args.second_pass_retries if args.second_pass_retries is not None else args.retries
+            sp_timeout = args.second_pass_timeout_ms if args.second_pass_timeout_ms is not None else args.timeout_ms
+            logging.info("Second pass for batch %d on empty cells only (rps=%.2f, retries=%d, timeout=%dms)", i, float(sp_rps), int(sp_retries), int(sp_timeout))
+            run_coro(update_statuses_async(
+                sheets,
+                args.headless,
+                start_row=b_start,
+                end_row=b_end,
+                limit=None,
+                max_concurrency=args.max_concurrency,
+                rps=sp_rps,
+                retries=sp_retries,
+                timeout_ms=sp_timeout,
+                only_empty=True,
+            ))
         # Sleep between batches to be gentle
         if i < len(batches) and args.sleep_between and args.sleep_between > 0:
             logging.info("Sleeping %.1f seconds before next batch", args.sleep_between)
