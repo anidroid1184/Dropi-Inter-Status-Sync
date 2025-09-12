@@ -158,8 +158,9 @@ def update_tracking_sheet(sheets: SheetsClient, source_data: List[Dict[str, Any]
     return added
 
 
-def update_statuses(sheets: SheetsClient, scraper: InterScraper, start_row: int = 2, limit: int | None = None):
-    records = sheets.read_main_records()
+def update_statuses(sheets: SheetsClient, scraper: InterScraper, start_row: int = 2, end_row: int | None = None, limit: int | None = None):
+    # Use resilient reader to avoid stopping at first blank row
+    records = sheets.read_main_records_resilient()
     headers = sheets.read_headers()
 
     # Ensure required headers
@@ -275,7 +276,8 @@ async def update_statuses_async(
     sleep_between_batches: float = 20.0,
     only_empty: bool = False,
 ):
-    records = sheets.read_main_records()
+    # Use resilient reader to avoid stopping at first blank row
+    records = sheets.read_main_records_resilient()
     headers = sheets.read_headers()
 
     # Ensure required headers

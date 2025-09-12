@@ -20,6 +20,30 @@ class SheetsClient:
     def read_main_records(self) -> List[Dict[str, Any]]:
         return self.sheet().get_all_records()
 
+    def read_main_records_resilient(self) -> List[Dict[str, Any]]:
+        """Read all rows using get_all_values(), avoiding early stop at the first blank row.
+
+        It builds dict records using the header row (row 1). Trailing missing
+        cells are filled as empty strings to keep consistent keys.
+        """
+        sh = self.sheet()
+        all_values = sh.get_all_values()
+        if not all_values:
+            return []
+        headers = [h.strip() for h in (all_values[0] if all_values else [])]
+        if not headers:
+            return []
+        records: List[Dict[str, Any]] = []
+        for row in all_values[1:]:
+            # Ensure row length matches headers length
+            if len(row) < len(headers):
+                row = row + [""] * (len(headers) - len(row))
+            elif len(row) > len(headers):
+                row = row[:len(headers)]
+            rec = {headers[i]: row[i] for i in range(len(headers))}
+            records.append(rec)
+        return records
+
     def read_headers(self) -> List[str]:
         return self.sheet().row_values(1)
 
