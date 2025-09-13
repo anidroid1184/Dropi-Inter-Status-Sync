@@ -15,4 +15,6 @@ logs/
 .DS_Store
 *.code-workspace
 
+# scripts
+scripts/_legacy/
 .env

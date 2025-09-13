@@ -58,13 +58,67 @@ python app.py --start-row 2 --limit 500
 - STATUS TRACKING se llena únicamente con el resultado del scraping (Interrapidísimo), no con el estado de DROPi.
 - Scraper usa Playwright + Chromium. Si el sitio cambia, ejecuta con `HEADLESS=false` para observar.
 
-## Cron (1–2am COL)
+## Deploy on Linux (server)
 
-Example (Linux cron):
+Steps to prepare and schedule the daily run with cron.
+
+1) Clone and setup
 
 ```bash
-0 2 * * * /bin/bash -lc 'cd /path/automatic && source venv/bin/activate && python app.py --start-row 2 >> logs/$(date +\%F).log 2>&1'
+cd /opt
+git clone <repo_url> automatic
+cd automatic
+python3 -m venv venv
+source venv/bin/activate
+python -m pip install -U pip setuptools wheel
+python -m pip install -r requirements.txt
+# Playwright browsers (one-time)
+python -m playwright install chromium
 ```
+
+2) Configure environment
+
+Create `.env` in project root:
+
+```ini
+SPREADSHEET_NAME=seguimiento
+TZ=America/Bogota
+DAILY_REPORT_PREFIX=Informe_
+# If exporting/uploading the XLSX to Drive:
+DRIVE_FOLER_INDIVIDUAL_FILE=<folder_id_in_shared_drive_or_use_delegation>
+```
+
+Place `credentials.json` (Service Account) in the project root.
+
+3) Run full flow manually
+
+```bash
+chmod +x scripts/run_all.sh
+./scripts/run_all.sh
+# Optional tuning via env vars before the command:
+START_ROW=2 BATCH_SIZE=1000 MAX_CONCURRENCY=3 RPS=1.0 RETRIES=2 TIMEOUT_MS=45000 SLEEP_BETWEEN=0 ./scripts/run_all.sh
+```
+
+4) Schedule with cron (12:00 PM COL)
+
+```bash
+crontab -e
+```
+
+Add this line (adjust path):
+
+```bash
+0 12 * * * cd /opt/automatic && . venv/bin/activate && TZ=America/Bogota ./scripts/run_all.sh >> logs/cron_$(date +\%F).log 2>&1
+```
+
+Logs:
+
+- Orchestrator run: `logs/run_all_YYYY-MM-DD_HH-mm-ss.log`
+- Cron aggregate: `logs/cron_YYYY-MM-DD.log`
+
+Notes:
+
+- To export/upload XLSX, ensure the Service Account can write to the target Drive folder (Shared Drive) or set up domain-wide delegation.
 
 ## Notes
 
