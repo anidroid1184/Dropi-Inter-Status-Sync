@@ -14,6 +14,7 @@ from logging_setup import setup_logging
 from config import settings
 from services.sheets_client import SheetsClient
 from oauth2client.service_account import ServiceAccountCredentials
+from services.tracker_service import TrackerService
 
 
 def load_credentials() -> ServiceAccountCredentials:
@@ -78,9 +79,10 @@ def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[Any]]
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Comparar columnas STATUS y escribir COINCIDEN y ALERTA")
+    parser = argparse.ArgumentParser(description="Comparar STATUS DROPI vs STATUS TRACKING y escribir COINCIDEN y ALERTA")
     parser.add_argument("--start-row", type=int, default=2)
     parser.add_argument("--end-row", type=int, default=None)
+    parser.add_argument("--dry-run", action="store_true", help="Solo calcular, no escribir cambios")
     args = parser.parse_args()
 
     setup_logging()
@@ -109,12 +111,19 @@ def main() -> int:
                 continue
             if args.end_row is not None and idx > args.end_row:
                 break
-            d = str(rec.get("STATUS DROPI", "")).strip().upper()
-            w = str(rec.get("STATUS TRACKING", "")).strip().upper()
-            if not d and not w:
+            # Raw values
+            dropi_raw = str(rec.get("STATUS DROPI", "")).strip()
+            web_raw = str(rec.get("STATUS TRACKING", "")).strip()
+            if not dropi_raw and not web_raw:
                 continue
-            coinciden = "TRUE" if d == w and d != "" else "FALSE"
-            alerta = "TRUE" if coinciden == "TRUE" else "FALSE"
+
+            # Normalized comparisons (avoid treating empty as PENDIENTE)
+            dropi_norm = TrackerService.normalize_status(dropi_raw) if dropi_raw else ""
+            web_norm = TrackerService.normalize_status(web_raw) if web_raw else ""
+
+            coinciden = "TRUE" if (dropi_norm and web_norm and dropi_norm == web_norm) else "FALSE"
+            # Compute alerta using business rule; fill defaults to keep logic stable
+            alerta = TrackerService.compute_alert(dropi_norm or "PENDIENTE", web_norm or "PENDIENTE")
 
             # Build row updates only where values differ from current
             cur_coinciden = str(rec.get("COINCIDEN", "")).strip().upper()
@@ -130,10 +139,12 @@ def main() -> int:
             if wrote:
                 updates.append((idx, row))
                 updated_rows += 1
+                if updated_rows % 100 == 0:
+                    logging.info("compare_statuses progress: %d rows with changes (at row %d)", updated_rows, idx)
 
-        if updates:
+        if updates and not args.dry_run:
             _flush_batch(sheets, updates)
-        logging.info("compare_statuses done. Rows updated: %d", updated_rows)
+        logging.info("compare_statuses done. Rows updated: %d%s", updated_rows, " (dry-run)" if args.dry_run else "")
         return 0
     except Exception as e:
         logging.exception("Error in compare_statuses: %s", e)

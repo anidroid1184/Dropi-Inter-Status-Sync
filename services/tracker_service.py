@@ -148,7 +148,21 @@ class TrackerService:
 
     @staticmethod
     def can_query(dropi: str) -> bool:
-        return dropi in {"GUIA_GENERADA", "EN_TRANSITO", "PENDIENTE"}
+        # Allow querying for all non-terminal, actionable states
+        return dropi in {
+            "GUIA_GENERADA",
+            "PENDIENTE",
+            "EN_PROCESAMIENTO",
+            "EN_BODEGA_TRANSPORTADORA",
+            "EN_TRANSITO",
+            "EN_BODEGA_DESTINO",
+            "EN_REPARTO",
+            "INTENTO_DE_ENTREGA",
+            "NOVEDAD",
+            "REEXPEDICION",
+            "REENVIO",
+            "EN_AGENCIA",
+        }
 
     @staticmethod
     def terminal(dropi: str, tracking: str) -> bool:

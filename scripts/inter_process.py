@@ -62,6 +62,9 @@ def main() -> int:
     parser.add_argument("--retries", type=int, default=2)
     parser.add_argument("--timeout-ms", dest="timeout_ms", type=int, default=30000)
     parser.add_argument("--headless", type=lambda v: str(v).lower() in {"1","true","yes"}, default=settings.headless)
+    parser.add_argument("--batch-size", dest="batch_size", type=int, default=500, help="Items per browser batch (default 500)")
+    parser.add_argument("--only-empty", dest="only_empty", action="store_true", help="Process only rows where STATUS TRACKING is empty")
+    parser.add_argument("--sleep-between-batches", dest="sleep_between_batches", type=float, default=5.0, help="Seconds to sleep between batches (default 5.0). Set 0 to disable.")
     parser.add_argument("--skip-drive", action="store_true", help="Do not ingest new rows from Drive here; this runner only updates statuses")
     args = parser.parse_args()
 
@@ -83,6 +86,9 @@ def main() -> int:
             rps=args.rps,
             retries=args.retries,
             timeout_ms=args.timeout_ms,
+            batch_size=args.batch_size,
+            sleep_between_batches=args.sleep_between_batches,
+            only_empty=args.only_empty,
         ))
         return 0
     except Exception as e:

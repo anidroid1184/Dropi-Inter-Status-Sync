@@ -19,6 +19,7 @@ from logging_setup import setup_logging
 from services.drive_client import DriveClient
 from services.sheets_client import SheetsClient
 from services.tracker_service import TrackerService
+from scripts.fill_missing_statuses import fill_missing_async
 from web.inter_scraper import InterScraper
 from web.inter_scraper_async import AsyncInterScraper
 from utils.checkpoints import load_checkpoint, save_checkpoint
@@ -196,14 +197,8 @@ def update_statuses(sheets: SheetsClient, scraper: InterScraper, start_row: int 
         web_raw = str(record.get("STATUS TRACKING", "")).strip()
         web_norm = TrackerService.normalize_status(web_raw) if web_raw else None
 
-        if TrackerService.terminal(dropi, web_norm or ""):
-            logging.info("Terminal status, skip: %s", tracking_number)
-            continue
-        if not TrackerService.can_query(dropi):
-            logging.info("Not eligible to query (DROPi=%s): %s", dropi, tracking_number)
-            continue
-
-        logging.info("Querying tracking: %s", tracking_number)
+        # Do not rely on DROPi state to decide; always scrape Interrapidisimo
+        logging.info("Querying tracking (ignoring DROPi state): %s", tracking_number)
         web_status_raw = scraper.get_status(tracking_number)
         exp = TrackerService.explain_normalization(web_status_raw)
         web_status = exp["status"]
@@ -275,7 +270,6 @@ async def update_statuses_async(
     batch_size: int = 5000,
     sleep_between_batches: float = 20.0,
     only_empty: bool = False,
-    ignore_eligibility: bool = False,
 ):
     # Use resilient reader to avoid stopping at first blank row
     records = sheets.read_main_records_resilient()
@@ -298,17 +292,16 @@ async def update_statuses_async(
 
     # Build list of items to process
     items: list[tuple[int, str, str, str]] = []  # (row, tracking_number, dropi_raw, dropi_norm)
-    total_rows = 0
-    candidates = 0
     for idx, record in enumerate(records, start=2):
         if idx < start_row:
             continue
+        if end_row is not None and idx > end_row:
+            break
         if limit is not None and processed >= limit:
             break
         tracking_number = str(record.get("ID TRACKING", "")).strip()
         if not tracking_number:
             continue
-        total_rows += 1
 
         dropi_raw = str(record.get("STATUS DROPI", "")).strip()
         dropi = TrackerService.normalize_status(dropi_raw)
@@ -316,24 +309,12 @@ async def update_statuses_async(
         if only_empty and web_norm:
             continue
 
-        # Eligibility filtering
-        if not ignore_eligibility:
-            if TrackerService.terminal(dropi, web_norm or ""):
-                logging.info("Terminal status, skip: %s", tracking_number)
-                continue
-            if not TrackerService.can_query(dropi):
-                logging.info("Not eligible to query (DROPi=%s): %s", dropi, tracking_number)
-                continue
-        candidates += 1
-
         items.append((idx, tracking_number, dropi_raw, dropi))
         processed += 1
 
     if not items:
         logging.info("No eligible rows to process")
         return
-    logging.info("Selection summary | rows_scanned_from_start: %d | candidates_selected: %d | only_empty=%s | ignore_eligibility=%s",
-                 total_rows, candidates, str(only_empty), str(ignore_eligibility))
 
     # Process in batches to keep browser fresh and reduce blanks over long runs
     def chunk(seq, size):
@@ -341,17 +322,20 @@ async def update_statuses_async(
             yield seq[i:i+size]
 
     processed_total = 0
-    for batch_idx, batch in enumerate(chunk(items, max(1, int(batch_size))), start=1):
-        logging.info("Processing batch %d with %d items", batch_idx, len(batch))
-        scraper = AsyncInterScraper(
-            headless=headless,
-            max_concurrency=max_concurrency,
-            retries=retries,
-            timeout_ms=timeout_ms,
-            block_resources=False,
-        )
-        await scraper.start()
-        try:
+    # Launch a single browser instance for all batches to reduce overhead
+    scraper = AsyncInterScraper(
+        headless=headless,
+        max_concurrency=max_concurrency,
+        retries=retries,
+        timeout_ms=timeout_ms,
+        block_resources=False,
+    )
+    await scraper.start()
+    try:
+        for batch_idx, batch in enumerate(chunk(items, max(1, int(batch_size))), start=1):
+            first_row = batch[0][0] if batch else None
+            last_row = batch[-1][0] if batch else None
+            logging.info("Processing batch %d with %d items (rows %s-%s)", batch_idx, len(batch), first_row, last_row)
             tn_list = [tn for _, tn, _, _ in batch]
             results = await scraper.get_status_many(tn_list, rps=rps)
             status_by_tn = {tn: raw for tn, raw in results}
@@ -365,6 +349,7 @@ async def update_statuses_async(
                     if raw:
                         status_by_tn[tn] = raw
 
+            done_in_batch = 0
             for (idx, tn, dropi_raw, dropi) in batch:
                 web_status_raw = status_by_tn.get(tn, "")
                 exp = TrackerService.explain_normalization(web_status_raw)
@@ -402,21 +387,25 @@ async def update_statuses_async(
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     ])
 
+                done_in_batch += 1
+                if done_in_batch % 50 == 0 or done_in_batch == len(batch):
+                    logging.info("Batch %d progress: %d/%d (row %d, tn %s)", batch_idx, done_in_batch, len(batch), idx, tn)
+
             if batch_updates:
                 _flush_batch(sheets, batch_updates)
                 batch_updates.clear()
 
             processed_total += len(batch)
             logging.info("Batch %d done. Processed so far: %d", batch_idx, processed_total)
-        finally:
-            await scraper.close()
 
-        # Pause between batches to be gentle with target site and Sheets API
-        if sleep_between_batches and processed_total < len(items):
-            try:
-                await asyncio.sleep(float(sleep_between_batches))
-            except Exception:
-                pass
+            # Pause between batches to be gentle with target site and Sheets API
+            if sleep_between_batches and processed_total < len(items):
+                try:
+                    await asyncio.sleep(float(sleep_between_batches))
+                except Exception:
+                    pass
+    finally:
+        await scraper.close()
 
     if differences:
         sheets.create_or_append_daily_report(differences, prefix=settings.daily_report_prefix)
@@ -485,9 +474,6 @@ def main():
     parser.add_argument("--skip-drive", action="store_true", help="Skip Drive source ingestion and only update statuses from the existing sheet")
     parser.add_argument("--async", dest="use_async", action="store_true", help="Use async Playwright scraper with concurrency")
     parser.add_argument("--max-concurrency", type=int, default=3, help="Max concurrent browser pages when using --async")
-    parser.add_argument("--rps", type=float, default=None, help="Limit of requests per second when using --async (pacing task launches)")
-    parser.add_argument("--only-empty", action="store_true", help="Process only rows where STATUS TRACKING is empty")
-    parser.add_argument("--ignore-eligibility", action="store_true", help="Do not skip rows by business rules (terminal/can_query); useful for backfilling")
     args = parser.parse_args()
 
     setup_logging()
@@ -556,9 +542,6 @@ def main():
                     start_row=args.start_row,
                     limit=args.limit,
                     max_concurrency=args.max_concurrency,
-                    rps=args.rps,
-                    only_empty=args.only_empty,
-                    ignore_eligibility=args.ignore_eligibility,
                 ))
             else:
                 update_statuses(sheets, scraper, start_row=args.start_row, limit=args.limit)
