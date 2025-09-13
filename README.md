@@ -212,3 +212,7 @@ python scripts/compare_statuses.py --start-row 2
 python scripts/compare_statuses.py --start-row 500 --end-row 3000
 python scripts/compare_statuses.py --start-row 2 --dry-run   # preview, no writes
 ```
+
+## Autoría y origen
+
+Este refactor fue desarrollado por mí a partir de un script previo ya existente; reutilicé su estructura como base para crear un producto más modular, mantenible y robusto.
