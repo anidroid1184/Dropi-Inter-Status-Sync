@@ -18,6 +18,11 @@ class Settings:
     headless: bool = os.getenv("HEADLESS", "true").lower() == "true"
     timezone: str = os.getenv("TZ", "America/Bogota")
     daily_report_prefix: str = os.getenv("DAILY_REPORT_PREFIX", "Informe_")
+    # Folder for individual daily report files (CSV export). Supports common typo key.
+    individual_report_folder_id: str = (
+        os.getenv("DRIVE_FOLER_INDIVIDUAL_FILE")
+        or os.getenv("DRIVE_FOLDER_INDIVIDUAL_FILE", "")
+    )
 
 
 settings = Settings()

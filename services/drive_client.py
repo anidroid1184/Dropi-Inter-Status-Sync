@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Optional, Dict, Any
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 import io
 import logging
 
@@ -64,4 +64,48 @@ class DriveClient:
             return fh.read()
         except Exception as e:
             logging.error("Drive download error: %s", e)
+            return None
+
+    def _find_files_by_name_in_folder(self, folder_id: str, name: str) -> list[dict[str, Any]]:
+        try:
+            q = (
+                f"name = '{name.replace("'", "\\'")}' and '{folder_id}' in parents and trashed = false"
+            )
+            results = (
+                self.service.files()
+                .list(q=q, fields="files(id, name)", includeItemsFromAllDrives=True, supportsAllDrives=True)
+                .execute()
+            )
+            return results.get("files", [])
+        except Exception as e:
+            logging.error("Drive search error: %s", e)
+            return []
+
+    def upload_bytes(self, folder_id: str, name: str, data: bytes, mime_type: str = "text/csv", replace: bool = True) -> Optional[str]:
+        """Upload a new file to Drive. If replace=True, remove existing files with the same name in the folder.
+
+        Returns the new file ID on success, None on failure.
+        """
+        try:
+            if replace:
+                existing = self._find_files_by_name_in_folder(folder_id, name)
+                for f in existing:
+                    try:
+                        self.service.files().delete(fileId=f["id"]).execute()
+                        logging.info("Deleted existing file in folder: %s (%s)", f.get("name"), f.get("id"))
+                    except Exception as de:
+                        logging.warning("Failed deleting existing file %s: %s", f.get("id"), de)
+
+            media = MediaIoBaseUpload(io.BytesIO(data), mimetype=mime_type, resumable=False)
+            body = {"name": name, "parents": [folder_id], "mimeType": mime_type}
+            created = (
+                self.service.files()
+                .create(body=body, media_body=media, fields="id, name", supportsAllDrives=True)
+                .execute()
+            )
+            fid = created.get("id")
+            logging.info("Uploaded file to Drive: %s (%s)", created.get("name"), fid)
+            return fid
+        except Exception as e:
+            logging.error("Drive upload error: %s", e)
             return None
