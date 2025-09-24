@@ -15,4 +15,8 @@ logs/
 .DS_Store
 *.code-workspace
 
-.env
+script.py
+docker-compose.yml
+Dockerfile
+/recreacion_linux
+/scripts/_legacy

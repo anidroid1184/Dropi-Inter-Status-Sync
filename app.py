@@ -413,6 +413,97 @@ async def update_statuses_async(
     logging.info("Statuses updated (async). Processed rows: %d, differences: %d", len(items), len(differences))
 
 
+def compare_statuses_batched(
+    sheets: SheetsClient,
+    start_row: int = 2,
+    end_row: int | None = None,
+    batch_size: int = 5000,
+):
+    """Compare STATUS DROPI vs STATUS TRACKING and write COINCIDEN and ALERTA in batches.
+
+    Mirrors scripts/compare_statuses.py logic, but runs inside app flow and supports batching
+    over a row range to avoid large single payloads.
+    """
+    # Ensure headers exist
+    required_headers = [
+        "ID DROPI",
+        "ID TRACKING",
+        "STATUS DROPI",
+        "STATUS TRACKING",
+        "COINCIDEN",
+        "ALERTA",
+    ]
+    sheets.ensure_headers(required_headers)
+    headers = sheets.read_headers()
+
+    # column indices (1-based)
+    coincide_col = headers.index("COINCIDEN") + 1
+    alerta_col = headers.index("ALERTA") + 1
+
+    # Read records resiliently
+    records = sheets.read_main_records_resilient()
+
+    # Build the list of row indices to process
+    rows: list[int] = []
+    for idx, _rec in enumerate(records, start=2):
+        if idx < start_row:
+            continue
+        if end_row is not None and idx > end_row:
+            break
+        rows.append(idx)
+
+    if not rows:
+        logging.info("compare_statuses_batched: no rows in range %s-%s", start_row, end_row)
+        return
+
+    def chunk(seq, size):
+        for i in range(0, len(seq), max(1, int(size))):
+            yield seq[i:i + max(1, int(size))]
+
+    total_updated = 0
+    for batch_idx, block in enumerate(chunk(rows, batch_size), start=1):
+        # Re-read current records just for safety if sheet may have changed; otherwise reuse
+        # Using existing array with indexes is fine since we only update derived columns
+        updates: list[tuple[int, list[Any]]] = []
+        for idx in block:
+            rec = records[idx - 2]
+            dropi_raw = str(rec.get("STATUS DROPI", "")).strip()
+            web_raw = str(rec.get("STATUS TRACKING", "")).strip()
+            if not dropi_raw and not web_raw:
+                continue
+
+            dropi_norm = TrackerService.normalize_status(dropi_raw) if dropi_raw else ""
+            web_norm = TrackerService.normalize_status(web_raw) if web_raw else ""
+
+            coinciden = "TRUE" if (dropi_norm and web_norm and dropi_norm == web_norm) else "FALSE"
+            alerta = TrackerService.compute_alert(dropi_norm or "PENDIENTE", web_norm or "PENDIENTE")
+
+            cur_coinciden = str(rec.get("COINCIDEN", "")).strip().upper()
+            cur_alerta = str(rec.get("ALERTA", "")).strip().upper()
+
+            row = [None] * max(coincide_col, alerta_col)
+            wrote = False
+            if cur_coinciden != coinciden:
+                row[coincide_col - 1] = coinciden
+                wrote = True
+            if cur_alerta != alerta:
+                row[alerta_col - 1] = alerta
+                wrote = True
+            if wrote:
+                updates.append((idx, row))
+                total_updated += 1
+
+        if updates:
+            _flush_batch(sheets, updates)
+        logging.info(
+            "Post-compare batch %d: rows %d-%d, updates written: %d",
+            batch_idx,
+            block[0],
+            block[-1],
+            len(updates),
+        )
+
+
 def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[Any]]] ):
     """Write only the exact cells that changed.
 
@@ -469,11 +560,15 @@ def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[Any]]
 def main():
     parser = argparse.ArgumentParser(description="Interrapidísimo tracking updater")
     parser.add_argument("--start-row", type=int, default=2, help="Start processing from this row (1-based)")
+    parser.add_argument("--end-row", type=int, default=None, help="End processing at this row (1-based, inclusive)")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of rows to process")
     parser.add_argument("--dry-run", action="store_true", help="Run without writing changes")
     parser.add_argument("--skip-drive", action="store_true", help="Skip Drive source ingestion and only update statuses from the existing sheet")
     parser.add_argument("--async", dest="use_async", action="store_true", help="Use async Playwright scraper with concurrency")
     parser.add_argument("--max-concurrency", type=int, default=3, help="Max concurrent browser pages when using --async")
+    parser.add_argument("--batch-size", type=int, default=5000, help="Batch size for async scraping (rows per browser lifecycle)")
+    parser.add_argument("--post-compare", action="store_true", help="Run compare (COINCIDEN/ALERTA) after scraping and BEFORE the daily report")
+    parser.add_argument("--compare-batch-size", type=int, default=5000, help="Batch size for post-compare step")
     args = parser.parse_args()
 
     setup_logging()
@@ -540,11 +635,30 @@ def main():
                     sheets,
                     settings.headless,
                     start_row=args.start_row,
+                    end_row=args.end_row,
                     limit=args.limit,
                     max_concurrency=args.max_concurrency,
+                    batch_size=args.batch_size,
                 ))
+                # Post-compare step: update COINCIDEN/ALERTA before generating/append daily report
+                if args.post_compare:
+                    # Compare whole sheet after scraping, regardless of scraping range
+                    compare_statuses_batched(
+                        sheets,
+                        start_row=2,
+                        end_row=None,
+                        batch_size=args.compare_batch_size,
+                    )
             else:
-                update_statuses(sheets, scraper, start_row=args.start_row, limit=args.limit)
+                update_statuses(sheets, scraper, start_row=args.start_row, end_row=args.end_row, limit=args.limit)
+                if args.post_compare:
+                    # Compare whole sheet after scraping, regardless of scraping range
+                    compare_statuses_batched(
+                        sheets,
+                        start_row=2,
+                        end_row=None,
+                        batch_size=args.compare_batch_size,
+                    )
         else:
             logging.info("Dry-run mode: skipping status updates")
         return 0
