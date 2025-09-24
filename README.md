@@ -7,10 +7,23 @@ Este proyecto actualiza estados de Interrapidísimo en Google Sheets usando un s
 ## Documentation / Documentación
 
 - See `docs/Overview.md`, `docs/Architecture.md`, `docs/Modules-and-APIs.md`, `docs/Configuration.md`, `docs/Operations-Runbook.md`, `docs/Troubleshooting.md`, `docs/Data-Mappings.md`, `docs/Testing.md`, and `docs/ADRs/*`.
-- Linux-focused runner docs: `recreacion_linux/README.md`.
 
 - Ver `docs/Overview.md`, `docs/Architecture.md`, `docs/Modules-and-APIs.md`, `docs/Configuration.md`, `docs/Operations-Runbook.md`, `docs/Troubleshooting.md`, `docs/Data-Mappings.md`, `docs/Testing.md` y `docs/ADRs/*`.
-- Documentación del runner para Linux: `recreacion_linux/README.md`.
+
+---
+
+## Table of Contents / Contenido
+
+- Features / Características
+- Requirements & Install / Requisitos e Instalación
+- Environment / Entorno
+- Quickstart (Windows) / Inicio rápido (Windows)
+- Docker (optional) / Docker (opcional)
+- Cron
+- Async runner / Runner asíncrono
+- Daily report / Informe diario
+- Examples / Ejemplos
+- Compare utility / Utilitario de comparación
 
 ## Structure / Estructura
 
@@ -32,11 +45,19 @@ automatic/
 ├─ scripts/
 │  ├─ inter_process.py        # Async modular runner
 │  └─ compare_statuses.py     # Compare DROPi vs web and write flags
-├─ recreacion_linux/          # Linux-optimized headless runner
 └─ docs/                      # Technical documentation
 └─ tests/
    └─ test_tracker_service.py # Unit tests for core business logic
 ```
+
+## Features / Características
+
+- Asynchronous scraping with Playwright + Chromium (concurrency, retries, RPS).
+- Status normalization and alerting with configurable JSON mappings.
+- Batch writes to Google Sheets to reduce API calls.
+- Post-compare step to compute `COINCIDEN` and `ALERTA` over the whole sheet.
+- Daily report generation that replaces the sheet every run.
+- Detailed logging and per-tracking audit CSV.
 
 ## Requirements / Requisitos
 
@@ -60,15 +81,7 @@ Ubuntu 25.04 note / Nota Ubuntu 25.04:
 export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1
 ```
 
-Diagnostic (headful via virtual display) / Diagnóstico (con pantalla virtual):
-
-```bash
-# Run headed inside a virtual Xorg session to observe UI timing / iframe mounting
-sudo apt-get update && sudo apt-get install -y xvfb
-HEADLESS=false DEBUG_SCRAPER=true BLOCK_RESOURCES=false \
-  xvfb-run -a -s "-screen 0 1280x800x24" \
-  python -m recreacion_linux.main scrape-to-csv --count 3 --rps 0.5 --timeout-ms 120000 --slow-mo 100
-```
+<!-- Diagnostic virtual display section removed (Linux recreation not used in this repo) -->
 
 ## Environment / Entorno
 
