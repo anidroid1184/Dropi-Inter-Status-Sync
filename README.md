@@ -131,13 +131,13 @@ docker compose run --rm app bash -lc "python scripts/inter_process.py --start-ro
 
 ## Cron (1–2am COL)
 
-Example (Linux cron):
+Example (Linux cron) / Ejemplo (cron en Linux):
 
 ```bash
 0 2 * * * /bin/bash -lc 'cd /path/automatic && source venv/bin/activate && python app.py --start-row 2 >> logs/$(date +\%F).log 2>&1'
 ```
 
-## Notes
+## Notes / Notas
 
 - `script.py` remains in place for now; new entrypoint is `app.py`.
 - The scraper uses Playwright + Chromium; adjust headless with `HEADLESS`.
@@ -177,19 +177,6 @@ Parameters / Parámetros:
 - `--post-compare`: después del scraping, ejecuta la comparación (COINCIDEN/ALERTA) antes del Daily Report.
 - `--compare-batch-size`: tamaño de lote para la comparación. Default 5000.
 
-Behavior (post-compare) / Comportamiento (post-compare):
-
-- Cuando se usa `--post-compare`, la comparación se ejecuta sobre toda la hoja (desde la fila 2 hasta el final), independientemente del rango de scraping. Luego se genera/apende el Daily Report si hubo diferencias.
-- `--headless true|false`: modo visible para depurar.
-- `--only-empty`: procesar solo filas con `STATUS TRACKING` vacío.
-
-Behavior / Comportamiento:
-
-- Se escribe en la hoja solo si el estado web no está vacío (no se sobreescribe con "").
-- Se ignora el estado DROPi para decidir consultar: todo se resuelve por scraping.
-- Las escrituras a Sheets van en bloques optimizados (columnas y tramos consecutivos) con troceo para evitar 4xx.
-
-## Recommended settings (4GB RAM / 2 CPU) / Configuración recomendada (4GB RAM / 2 CPU)
 
 - Seguro (producción estable):
   - `--batch-size 500` `--max-concurrency 2` `--rps 0.6` `--retries 2` `--timeout-ms 60000`
@@ -244,6 +231,17 @@ python app.py --async --skip-drive \
   --start-row 2 \
   --max-concurrency 3 --batch-size 5000 \
   --post-compare --compare-batch-size 5000
+```
+
+Report-only (regenerate daily report) / Solo informe (regenerar informe diario):
+
+- Recalcula la comparación en toda la hoja y reescribe el informe, sin scrapear filas (útil para refrescar el informe del día).
+
+```bash
+python app.py --async --skip-drive \
+  --start-row 2 --limit 0 \
+  --max-concurrency 1 --batch-size 1 \
+  --post-compare --compare-batch-size 20000
 ```
 
 ## Compare statuses utility / Utilitario de comparación
