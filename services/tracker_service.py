@@ -17,9 +17,9 @@ class TrackerService:
         "pendiente": "PENDIENTE",
         "origen": "PENDIENTE",
         "recibimos": "EN_TRANSITO",
-        "devuelto": "DEVUELTO",
-        "devolución": "DEVUELTO",
-        "retorno": "DEVUELTO",
+        "devuelto": "DEVOLUCION",
+        "devolución": "DEVOLUCION",
+        "retorno": "DEVOLUCION",
         "agencia": "EN_AGENCIA",
         "recoger": "EN_AGENCIA",
         "guia_generada": "GUIA_GENERADA",
@@ -74,6 +74,10 @@ class TrackerService:
         return compiled
 
     @staticmethod
+    def _alias_status(label: str) -> str:
+        return "DEVOLUCION" if label == "DEVUELTO" else label
+
+    @staticmethod
     def normalize_status(s: str) -> str:
         if not s:
             return "PENDIENTE"
@@ -82,18 +86,18 @@ class TrackerService:
         # 1) Overrides have highest precedence
         for phrase, status in TrackerService.OVERRIDES.items():
             if phrase in text:
-                return status
+                return TrackerService._alias_status(status)
 
         # 2) JSON compiled mappings from Dropi + Inter
         compiled = TrackerService._load_mappings()
         for kw, status in compiled.items():
             if kw in text:
-                return status
+                return TrackerService._alias_status(status)
 
         # 3) Legacy heuristics fallback to keep behavior backwards compatible
         for k, v in TrackerService.NORM_MAP.items():
             if k in text:
-                return v
+                return TrackerService._alias_status(v)
 
         return "EN_TRANSITO"  # safe fallback
 
@@ -140,7 +144,7 @@ class TrackerService:
             return "TRUE"
         if d == "ENTREGADO" and w != "ENTREGADO":
             return "TRUE"
-        if d == "DEVUELTO" and w != "DEVUELTO":
+        if d == "DEVOLUCION" and w != "DEVOLUCION":
             return "TRUE"
         if d != w:
             return "TRUE"
@@ -166,7 +170,7 @@ class TrackerService:
 
     @staticmethod
     def terminal(dropi: str, tracking: str) -> bool:
-        return ("ENTREGADO" in {dropi, tracking}) or ("DEVUELTO" in {dropi, tracking})
+        return ("ENTREGADO" in {dropi, tracking}) or ("DEVOLUCION" in {dropi, tracking})
 
     @staticmethod
     def prepare_new_rows(source_data: List[Dict], existing_guias: set) -> List[List[str]]:

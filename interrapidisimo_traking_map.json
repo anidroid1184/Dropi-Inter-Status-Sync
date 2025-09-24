@@ -6,10 +6,12 @@
   "GUIA_GENERADA": [
     "guia generada",
     "guía generada",
+    "guia_generada",
     "documento generado",
     "cargue en sistema",
     "pendiente por admitir",
     "pendiente de admision",
+    "pendiente de admisión",
     "envio pendiente por admitir",
     "envío pendiente por admitir",
     "pendiente de recoleccion",
@@ -26,12 +28,16 @@
     "listo para recoleccion",
     "listo para recolección",
     "admitido",
+    "admitida",
+    "admitida por transportadora",
     "recibido en oficina",
     "recibimos tu envio",
     "recibimos tu envío",
-    "envio pendiente por admitir",
-    "envío pendiente por admitir",
-    "envio cargado"
+    "envio cargado",
+    "digitalizada",
+    "guia digitalizada",
+    "guía digitalizada",
+    "guia_digitalizada"
   ],
   "EN_PROCESAMIENTO": [
     "en procesamiento",
@@ -55,18 +61,23 @@
     "ingresó a bodega de transportadora",
     "en centro logistico origen",
     "en centro logístico origen",
+    "centro_logistico_origen",
     "recibido en bodega origen",
     "en agencia origen",
+    "agencia_origen",
     "en centro de clasificacion origen",
-    "en centro de clasificación origen"
+    "en centro de clasificación origen",
+    "centro_clasificacion_origen"
   ],
   "EN_TRANSITO": [
     "en transito",
     "en tránsito",
+    "en_transito",
     "transito",
     "tránsito",
     "en camino",
     "ruta",
+    "en_ruta",
     "viajando a tu destino",
     "traslado entre centros",
     "salio de centro logistico",
@@ -86,14 +97,17 @@
     "llegó al centro logístico destino",
     "en ciudad de destino",
     "en agencia destino",
+    "en_agencia_destino",
     "en centro de clasificacion destino",
     "en centro de clasificación destino",
+    "centro_clasificacion_destino",
     "retorno a centro logistico destino",
     "retorno a centro logístico destino",
     "recibido en destino"
   ],
   "EN_REPARTO": [
     "en reparto",
+    "en_reparto",
     "en ruta de entrega",
     "salio a entrega",
     "salió a entrega",
@@ -105,6 +119,7 @@
   ],
   "INTENTO_DE_ENTREGA": [
     "intento de entrega",
+    "intento_de_entrega",
     "no fue posible entregar",
     "destinatario ausente",
     "no habia quien recibiera",
@@ -122,12 +137,15 @@
   ],
   "RECLAME_EN_OFICINA": [
     "reclame en oficina",
+    "reclame_en_oficina",
     "reclamar en oficina",
     "pendiente por reclamar",
     "disponible en oficina",
     "disponible en punto de entrega"
   ],
   "EN_AGENCIA": [
+    "en agencia",
+    "en_agencia",
     "agencia",
     "disponible para recoger",
     "listo para recoger",
@@ -152,7 +170,8 @@
     "entrega exitosa",
     "recibido conforme",
     "entregado a seguridad",
-    "entregado en domicilio"
+    "entregado en domicilio",
+    "entrega_realizada"
   ],
   "ENTREGADO_A_TRANSPORTADORA": [
     "entregado a transportadora",
@@ -172,8 +191,6 @@
     "devuelto al remitente",
     "tu envio fue devuelto",
     "tu envío fue devuelto",
-    "tu envío fue devuelto",
-    "tu envio fue devuelto",
     "en proceso de devolucion",
     "en proceso de devolución",
     "no aceptado por destinatario",

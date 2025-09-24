@@ -114,25 +114,86 @@ class SheetsClient:
                 raise
 
     # --- Daily report helpers ---
-    def create_or_append_daily_report(self, rows: List[List[Any]], prefix: str = "Informe_") -> str:
-        if not rows:
-            return ""
+    def create_or_append_daily_report(self, _rows: List[List[Any]], prefix: str = "Informe_") -> str:
+        """Create or REPLACE the daily report with rows where ALERTA == TRUE.
+
+        Ignores the passed-in rows and instead reads the main sheet to ensure
+        the report reflects the current state after post-compare.
+        """
         date_name = datetime.now().strftime("%Y-%m-%d")
         sheet_name = f"{prefix}{date_name}"
         try:
+            # Read all records from main sheet
+            records = self.read_main_records_resilient()
+            if not records:
+                # Still create/clear the report with just headers
+                filtered_rows: List[List[Any]] = []
+            else:
+                # Find header keys with resilient casing
+                sample = records[0]
+                def find_key(candidates: List[str]) -> Optional[str]:
+                    keys = {k.strip().upper(): k for k in sample.keys()}
+                    for cand in candidates:
+                        if cand.upper() in keys:
+                            return keys[cand.upper()]
+                    return None
+
+                k_tracking = find_key(["ID TRACKING"]) or "ID TRACKING"
+                k_dropi = find_key(["STATUS DROPI"]) or "STATUS DROPI"
+                k_web = find_key(["STATUS TRACKING"]) or "STATUS TRACKING"
+                k_alerta = find_key(["ALERTA", "Alerta"]) or "ALERTA"
+                k_coinciden = find_key(["COINCIDEN"])  # may be None if not created yet
+
+                filtered_rows = []
+                TRUTHY = {"TRUE", "VERDADERO", "SI", "SÍ", "YES", "1"}
+                FALSY = {"FALSE", "FALSO", "NO", "0"}
+                coinc_false_count = 0
+                alerta_truthy_count = 0
+                for rec in records:
+                    include = False
+                    # Condition A: ALERTA is truthy (user's requirement)
+                    alerta_raw = rec.get(k_alerta, "")
+                    alerta_val_upper = str(alerta_raw).strip().upper()
+                    if alerta_val_upper in TRUTHY:
+                        include = True
+                        alerta_truthy_count += 1
+                    # Condition B: OR COINCIDEN == FALSE (safety net when ALERTA not set yet)
+                    if not include and k_coinciden:
+                        coinc_raw = rec.get(k_coinciden, "")
+                        coinc_val = str(coinc_raw).strip().upper()
+                        if coinc_val in FALSY:
+                            include = True
+                            coinc_false_count += 1
+
+                    if include:
+                        filtered_rows.append([
+                            str(rec.get(k_tracking, "")).strip(),
+                            str(rec.get(k_dropi, "")).strip(),
+                            str(rec.get(k_web, "")).strip(),
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        ])
+                # Diagnostics
+                logging.info(
+                    "Daily report selection: total=%d, coinciden_false=%d, alerta_truthy=%d, final_rows=%d",
+                    len(records), coinc_false_count, alerta_truthy_count, len(filtered_rows)
+                )
+
+            # Create or open the report sheet
             try:
                 ws = self.spreadsheet.worksheet(sheet_name)
             except gspread.WorksheetNotFound:
                 ws = self.spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=10)
-                headers = ["ID TRACKING", "STATUS DROPI", "STATUS TRACKING", "FECHA VERIFICACIÓN"]
-                ws.update("A1:D1", [headers])
 
-            start_row = len(ws.get_all_values()) + 1
-            end_row = start_row + len(rows) - 1
-            if end_row > ws.row_count:
-                ws.add_rows(end_row - ws.row_count)
-            ws.update(f"A{start_row}:D{end_row}", rows)
-            logging.info("Daily report updated: %s, rows: %d", sheet_name, len(rows))
+            # REPLACE: clear previous content and write fresh headers + rows
+            headers = ["ID TRACKING", "STATUS DROPI", "STATUS TRACKING", "FECHA VERIFICACIÓN"]
+            ws.clear()
+            ws.update("A1:D1", [headers])
+            if filtered_rows:
+                end_row = 1 + len(filtered_rows)
+                if end_row > ws.row_count:
+                    ws.add_rows(end_row - ws.row_count)
+                ws.update(f"A2:D{end_row}", filtered_rows)
+            logging.info("Daily report replaced: %s, rows: %d (ALERTA=TRUE)", sheet_name, len(filtered_rows))
             return sheet_name
         except Exception as e:
             logging.error("Error updating daily report: %s", e)

@@ -6,18 +6,21 @@ __pycache__/
 venv/
 .env
 
-# Credentials and local data
+# Credenciales y datos locales
 credentials.json
 checkpoint.json
 logs/
 
-# OS / IDE
+# Sistema operativo / IDE
 .DS_Store
 *.code-workspace
 
-# scripts
-scripts/_legacy/
-.env
-/recreacion_linux
-*.yml
+# Archivos y directorios del proyecto
+script.py
+docker-compose.yml
 Dockerfile
+*.yml
+
+# Directorios específicos
+/recreacion_linux/
+scripts/_legacy/
