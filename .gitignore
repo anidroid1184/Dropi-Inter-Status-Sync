@@ -18,3 +18,6 @@ logs/
 # scripts
 scripts/_legacy/
 .env
+/recreacion_linux
+*.yml
+Dockerfile
