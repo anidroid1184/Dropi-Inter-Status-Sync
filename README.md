@@ -1,4 +1,4 @@
-# Interrapidísimo Tracker — Bilingual README / README Bilingüe
+# Interrapidísimo Tracker
 
 This project updates Interrapidísimo tracking statuses into Google Sheets using a Playwright-based scraper and business logic for normalization and alerting.
 
