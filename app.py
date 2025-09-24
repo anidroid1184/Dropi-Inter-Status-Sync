@@ -250,10 +250,6 @@ def update_statuses(sheets: SheetsClient, scraper: InterScraper, start_row: int 
     if batch_updates:
         _flush_batch(sheets, batch_updates)
 
-    # Daily report
-    if differences:
-        sheets.create_or_append_daily_report(differences, prefix=settings.daily_report_prefix)
-
     logging.info("Statuses updated. Processed rows: %d, differences: %d", processed, len(differences))
 
 
@@ -406,9 +402,6 @@ async def update_statuses_async(
                     pass
     finally:
         await scraper.close()
-
-    if differences:
-        sheets.create_or_append_daily_report(differences, prefix=settings.daily_report_prefix)
 
     logging.info("Statuses updated (async). Processed rows: %d, differences: %d", len(items), len(differences))
 
@@ -649,6 +642,8 @@ def main():
                         end_row=None,
                         batch_size=args.compare_batch_size,
                     )
+                # Generate/replace daily report from current sheet state
+                sheets.create_or_append_daily_report([], prefix=settings.daily_report_prefix)
             else:
                 update_statuses(sheets, scraper, start_row=args.start_row, end_row=args.end_row, limit=args.limit)
                 if args.post_compare:
@@ -659,6 +654,8 @@ def main():
                         end_row=None,
                         batch_size=args.compare_batch_size,
                     )
+                # Generate/replace daily report from current sheet state
+                sheets.create_or_append_daily_report([], prefix=settings.daily_report_prefix)
         else:
             logging.info("Dry-run mode: skipping status updates")
         return 0
