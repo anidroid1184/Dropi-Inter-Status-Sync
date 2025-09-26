@@ -16,6 +16,7 @@ from logging_setup import setup_logging
 from config import settings
 from services.sheets_client import SheetsClient
 from oauth2client.service_account import ServiceAccountCredentials
+from services.tracker_service import TrackerService
 
 
 def load_credentials() -> ServiceAccountCredentials:
@@ -82,7 +83,16 @@ def main() -> int:
             if not id_dropi and not id_tracking:
                 continue
 
-            rows.append([id_dropi, id_tracking, dropi, web, now_str])
+            # Normalize and include ONLY mismatches
+            dropi_norm = TrackerService.normalize_status(dropi) if dropi else ""
+            web_norm = TrackerService.normalize_status(web) if web else ""
+            if not dropi_norm and not web_norm:
+                continue
+            if dropi_norm == web_norm:
+                continue
+            # Fix visible 'DEVUELTO' to 'DEVOLUCION' in the exported report
+            web_display = "DEVOLUCION" if web.strip().upper() == "DEVUELTO" else web
+            rows.append([id_dropi, id_tracking, dropi, web_display, now_str])
             processed += 1
 
         if not rows:

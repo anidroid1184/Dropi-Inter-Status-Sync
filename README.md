@@ -240,10 +240,7 @@ python app.py --async --skip-drive \
 Proceso grande (toda la hoja por lotes, post-compare sobre toda la hoja):
 
 ```bash
-python app.py --async --skip-drive \
-  --start-row 2 \
-  --max-concurrency 3 --batch-size 5000 \
-  --post-compare --compare-batch-size 5000
+  python app.py --async --skip-drive --start-row 2 --max-concurrency 3 --batch-size 1000 --post-compare --compare-batch-size 1000
 ```
 
 Report-only (regenerate daily report) / Solo informe (regenerar informe diario):

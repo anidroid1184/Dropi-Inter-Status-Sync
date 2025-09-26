@@ -117,25 +117,31 @@ def main() -> int:
             if not dropi_raw and not web_raw:
                 continue
 
-            # Normalized comparisons (avoid treating empty as PENDIENTE)
+            # Normalize comparisons (avoid treating empty as PENDIENTE)
             dropi_norm = TrackerService.normalize_status(dropi_raw) if dropi_raw else ""
             web_norm = TrackerService.normalize_status(web_raw) if web_raw else ""
 
+            # If the visible value is 'DEVUELTO' but normalization maps to DEVOLUCION, write back DEVOLUCION
+            row_len = max(coincide_col, alerta_col, track_col)
+            row = [None] * row_len
+            wrote = False
+            if web_raw.upper() == "DEVUELTO" and web_norm == "DEVOLUCION":
+                row[track_col - 1] = "DEVOLUCION"
+                wrote = True
+
             coinciden = "TRUE" if (dropi_norm and web_norm and dropi_norm == web_norm) else "FALSE"
-            # Compute alerta using business rule; fill defaults to keep logic stable
             alerta = TrackerService.compute_alert(dropi_norm or "PENDIENTE", web_norm or "PENDIENTE")
 
-            # Build row updates only where values differ from current
+            # Only write COINCIDEN/ALERTA if changed
             cur_coinciden = str(rec.get("COINCIDEN", "")).strip().upper()
             cur_alerta = str(rec.get("ALERTA", "")).strip().upper()
-            row = [None] * max(coincide_col, alerta_col)
-            wrote = False
             if cur_coinciden != coinciden:
                 row[coincide_col - 1] = coinciden
                 wrote = True
             if cur_alerta != alerta:
                 row[alerta_col - 1] = alerta
                 wrote = True
+
             if wrote:
                 updates.append((idx, row))
                 updated_rows += 1

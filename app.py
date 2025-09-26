@@ -10,7 +10,6 @@ from datetime import datetime
 from typing import List, Dict, Any
 import threading
 
-import gspread
 import pandas as pd
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -19,7 +18,6 @@ from logging_setup import setup_logging
 from services.drive_client import DriveClient
 from services.sheets_client import SheetsClient
 from services.tracker_service import TrackerService
-from scripts.fill_missing_statuses import fill_missing_async
 from web.inter_scraper import InterScraper
 from web.inter_scraper_async import AsyncInterScraper
 from utils.checkpoints import load_checkpoint, save_checkpoint
