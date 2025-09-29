@@ -32,8 +32,8 @@ def load_credentials() -> ServiceAccountCredentials:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Genera/actualiza la hoja diaria Informe_YYYY-MM-DD con 5 columnas: "
-            "ID DROPI, ID TRACKING, STATUS DROPI, STATUS TRACKING, FECHA VERIFICACIÓN"
+            "Genera/actualiza la hoja diaria Informe_YYYY-MM-DD con 6 columnas: "
+            "ID DROPI, ID TRACKING, STATUS DROPI, STATUS TRACKING, FECHA VERIFICACIÓN, STATUS INTERRAPIDISIMO"
         )
     )
     parser.add_argument("--start-row", type=int, default=2, help="Fila inicial (1-based)")
@@ -80,6 +80,7 @@ def main() -> int:
             id_tracking = str(rec.get("ID TRACKING", "")).strip()
             dropi = str(rec.get("STATUS DROPI", "")).strip()
             web = str(rec.get("STATUS TRACKING", "")).strip()
+            inter_raw = str(rec.get("STATUS INTERRAPIDISIMO", "")).strip()
             if not id_dropi and not id_tracking:
                 continue
 
@@ -92,7 +93,8 @@ def main() -> int:
                 continue
             # Fix visible 'DEVUELTO' to 'DEVOLUCION' in the exported report
             web_display = "DEVOLUCION" if web.strip().upper() == "DEVUELTO" else web
-            rows.append([id_dropi, id_tracking, dropi, web_display, now_str])
+            # Append STATUS INTERRAPIDISIMO al final
+            rows.append([id_dropi, id_tracking, dropi, web_display, now_str, inter_raw])
             processed += 1
 
         if not rows:
@@ -104,7 +106,7 @@ def main() -> int:
         sheet_name = f"{settings.daily_report_prefix}{date_for_sheet}"
 
         # Escribir (reemplazo completo): limpiar hoja existente o crear y luego escribir headers + datos
-        headers = ["ID DROPI", "ID TRACKING", "STATUS DROPI", "STATUS TRACKING", "FECHA VERIFICACIÓN"]
+        headers = ["ID DROPI", "ID TRACKING", "STATUS DROPI", "STATUS TRACKING", "FECHA VERIFICACIÓN", "STATUS INTERRAPIDISIMO"]
         try:
             try:
                 ws = sheets.spreadsheet.worksheet(sheet_name)
@@ -114,7 +116,7 @@ def main() -> int:
                 ws = sheets.spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=10)
 
             # Escribir encabezados
-            ws.update(range_name="A1:E1", values=[headers])
+            ws.update(range_name="A1:F1", values=[headers])
 
             # Asegurar espacio suficiente y escribir en bloques para evitar límites de tamaño
             CHUNK = 2000
@@ -125,7 +127,7 @@ def main() -> int:
                 part = rows[i:i+CHUNK]
                 start_row = 2 + i
                 end_row = start_row + len(part) - 1
-                ws.update(range_name=f"A{start_row}:E{end_row}", values=part)
+                ws.update(range_name=f"A{start_row}:F{end_row}", values=part)
 
             logging.info("Daily report updated: %s, rows: %d", sheet_name, len(rows))
             return 0
