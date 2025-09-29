@@ -158,18 +158,20 @@ def update_tracking_sheet(sheets: SheetsClient, source_data: List[Dict[str, Any]
 
 
 def update_statuses(sheets: SheetsClient, scraper: InterScraper, start_row: int = 2, end_row: int | None = None, limit: int | None = None):
-    # Use resilient reader to avoid stopping at first blank row
     records = sheets.read_main_records_resilient()
     headers = sheets.read_headers()
 
     # Ensure required headers
-    required_headers = ["ID DROPI", "ID TRACKING", "STATUS DROPI", "STATUS TRACKING", "Alerta"]
+    required_headers = ["ID DROPI", "ID TRACKING", "STATUS DROPI", "STATUS TRACKING", "Alerta", "STATUS INTERRAPIDISIMO"]
     sheets.ensure_headers(required_headers)
     headers = sheets.read_headers()
 
     tracking_col = headers.index("ID TRACKING") + 1
     dropi_col = headers.index("STATUS DROPI") + 1
     web_col = headers.index("STATUS TRACKING") + 1
+    int_col = headers.index("STATUS INTERRAPIDISIMO") + 1
+
+    # Actualizacion de STATUS INTERRAPIDISIMO
     # alert_col = headers.index("Alerta") + 1  # Disabled: do not modify this column for now
 
     batch_updates = []
@@ -225,8 +227,9 @@ def update_statuses(sheets: SheetsClient, scraper: InterScraper, start_row: int 
 
         # Queue update ONLY if we have a non-empty status to avoid overwriting with blanks
         if web_status:
-            row_updates = [None] * web_col
+            row_updates = [None] * max(web_col, int_col) # tomara el maximo de columnas para evitar errores
             row_updates[web_col - 1] = web_status
+            row_updates[int_col - 1] = (web_status_raw or "")
             batch_updates.append((idx, row_updates))
 
         if dropi != web_status:
@@ -270,13 +273,15 @@ async def update_statuses_async(
     headers = sheets.read_headers()
 
     # Ensure required headers
-    required_headers = ["ID DROPI", "ID TRACKING", "STATUS DROPI", "STATUS TRACKING", "Alerta"]
+    required_headers = ["ID DROPI", "ID TRACKING", "STATUS DROPI", "STATUS TRACKING", "Alerta", "STATUS INTERRAPIDISIMO"]
     sheets.ensure_headers(required_headers)
     headers = sheets.read_headers()
 
+    # Columnas
     tracking_col = headers.index("ID TRACKING") + 1
     dropi_col = headers.index("STATUS DROPI") + 1
     web_col = headers.index("STATUS TRACKING") + 1
+    int_col = headers.index("STATUS INTERRAPIDISIMO") + 1
 
     batch_updates = []
     differences = []
@@ -369,8 +374,9 @@ async def update_statuses_async(
                 )
 
                 if web_status:
-                    row_updates = [None] * web_col
+                    row_updates = [None] * max(web_col, int_col)
                     row_updates[web_col - 1] = web_status
+                    row_updates[int_col - 1] = (web_status_raw or "")
                     batch_updates.append((idx, row_updates))
 
                 if dropi != web_status:
@@ -423,6 +429,7 @@ def compare_statuses_batched(
         "STATUS TRACKING",
         "COINCIDEN",
         "ALERTA",
+        "STATUS INTERRAPIDISIMO"
     ]
     sheets.ensure_headers(required_headers)
     headers = sheets.read_headers()
