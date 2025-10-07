@@ -1,0 +1,35 @@
+# ========================================
+# Sistema de Tracking Dropi-Inter
+# Python 3.11.9+ Compatible
+# Versión: 2.0.0 (Refactorizada)
+# Actualizado: 6 de octubre de 2025
+# ========================================
+
+# Web Scraping
+playwright>=1.48,<2.0
+greenlet>=3.1.1
+
+# Data Processing
+pandas>=2.2,<3.0
+openpyxl>=3.1.2
+
+# Google APIs
+gspread==6.1.2
+google-api-python-client==2.139.0
+oauth2client==4.1.3
+
+# Configuration & Environment
+python-dotenv==1.0.1
+
+# Async Support (incluido con Python 3.11+)
+# asyncio - Built-in
+
+# Type Checking & Development (opcional)
+# mypy>=1.5.0
+# pylint>=3.0.0
+# black>=23.0.0
+
+# Testing (opcional)
+# pytest>=7.4.0
+# pytest-asyncio>=0.21.0
+# pytest-cov>=4.1.0

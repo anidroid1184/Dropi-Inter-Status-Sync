@@ -11,21 +11,18 @@ This project provides automated package status synchronization between Dropi and
 Este proyecto ha evolucionado de un monolito a **3 aplicaciones completamente independientes**:
 
 ### 1. **APP SCRAPER** - Scraping de Web
-
 - 📂 `app_scrapper/`
 - 🎯 Scraping síncrono/asíncrono de Interrapidísimo
 - 📝 Actualiza columna STATUS TRACKING en Google Sheets
 - ⚡ Playwright para navegación automatizada
 
 ### 2. **APP COMPARER** - Comparador de Estados
-
 - 📂 `app_comparer/`
 - 🎯 Compara STATUS DROPI vs STATUS TRACKING
 - 📝 Calcula columnas COINCIDEN y ALERTA
 - 🧠 Normalización inteligente de estados
 
 ### 3. **APP MAKE DAILY REPORT** - Generador de Reportes
-
 - 📂 `app_make_dialy_report/`
 - 🎯 Genera reportes Excel con alertas
 - 📝 Sube reportes a Google Drive
@@ -43,13 +40,11 @@ Este proyecto ha evolucionado de un monolito a **3 aplicaciones completamente in
 ## 📚 Documentación
 
 ### Apps Independientes
-
 - 📘 **`app_scrapper/README.md`** - Documentación completa del Scraper
 - 📗 **`app_comparer/README.md`** - Documentación completa del Comparador
 - 📙 **`app_make_dialy_report/README.md`** - Documentación completa del Reporter
 
 ### Sistema General (Legacy)
-
 - Ver `docs/Overview.md`, `docs/Architecture.md`, `docs/Modules-and-APIs.md`, etc.
 
 ---

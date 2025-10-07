@@ -1,5 +1,23 @@
+"""
+Aplicación principal del sistema de tracking Dropi-Inter.
+
+Esta aplicación coordina la sincronización de estados entre los sistemas
+de Dropi e Interrapidísimo, proporcionando seguimiento automatizado de paquetes
+y generación de reportes de discrepancias.
+
+Características principales:
+- Ingesta automática de datos desde Google Drive
+- Scraping de estados desde portal web de Interrapidísimo  
+- Comparación y detección de alertas entre sistemas
+- Generación de reportes diarios automatizados
+- Soporte para procesamiento síncrono y asíncrono
+
+Autor: Sistema de Tracking Dropi-Inter
+Fecha: Octubre 2025
+Versión: 2.0.0 (Refactorizada)
+"""
+
 from __future__ import annotations
-import argparse
 import io
 import logging
 import os
@@ -8,25 +26,25 @@ import json
 import asyncio
 from datetime import datetime
 from typing import List, Dict, Any
-import threading
 
 import pandas as pd
 from oauth2client.service_account import ServiceAccountCredentials
 
 from config import settings
-from logging_setup import setup_logging
 from services.drive_client import DriveClient
 from services.sheets_client import SheetsClient
 from services.tracker_service import TrackerService
 from web.inter_scraper import InterScraper
 from web.inter_scraper_async import AsyncInterScraper
-from utils.checkpoints import load_checkpoint, save_checkpoint
+from utils.checkpoints import save_checkpoint
+from utils.batch_operations import _flush_batch
 
 
 def _init_status_log() -> str:
     """Prepare a CSV file to log per-tracking results for auditing."""
     os.makedirs("logs", exist_ok=True)
-    path = os.path.join("logs", f"statuses_{datetime.now().strftime('%Y%m%d')}.csv")
+    path = os.path.join(
+        "logs", f"statuses_{datetime.now().strftime('%Y%m%d')}.csv")
     if not os.path.exists(path):
         with open(path, "w", encoding="utf-8", newline="") as f:
             writer = csv.writer(f)
@@ -116,7 +134,8 @@ def load_credentials() -> ServiceAccountCredentials:
         "https://www.googleapis.com/auth/drive",
         "https://www.googleapis.com/auth/drive.file",
     ]
-    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+    creds = ServiceAccountCredentials.from_json_keyfile_name(
+        "credentials.json", scope)
     return creds
 
 
@@ -151,7 +170,8 @@ def read_source_data(drive: DriveClient, file_id: str) -> List[Dict[str, Any]]:
 def update_tracking_sheet(sheets: SheetsClient, source_data: List[Dict[str, Any]]) -> int:
     sheet = sheets.sheet()
     existing_records = sheet.get_all_records()
-    existing_guias = {str(r.get("ID TRACKING", "")).strip() for r in existing_records if r.get("ID TRACKING")}
+    existing_guias = {str(r.get("ID TRACKING", "")).strip()
+                      for r in existing_records if r.get("ID TRACKING")}
     new_rows = TrackerService.prepare_new_rows(source_data, existing_guias)
     added = sheets.append_new_rows(new_rows)
     return added
@@ -162,7 +182,8 @@ def update_statuses(sheets: SheetsClient, scraper: InterScraper, start_row: int 
     headers = sheets.read_headers()
 
     # Ensure required headers
-    required_headers = ["ID DROPI", "ID TRACKING", "STATUS DROPI", "STATUS TRACKING", "Alerta", "STATUS INTERRAPIDISIMO"]
+    required_headers = ["ID DROPI", "ID TRACKING", "STATUS DROPI",
+                        "STATUS TRACKING", "ALERTA", "STATUS INTERRAPIDISIMO"]
     sheets.ensure_headers(required_headers)
     headers = sheets.read_headers()
 
@@ -195,10 +216,12 @@ def update_statuses(sheets: SheetsClient, scraper: InterScraper, start_row: int 
         dropi = TrackerService.normalize_status(dropi_raw)
 
         web_raw = str(record.get("STATUS TRACKING", "")).strip()
-        web_norm = TrackerService.normalize_status(web_raw) if web_raw else None
+        web_norm = TrackerService.normalize_status(
+            web_raw) if web_raw else None
 
         # Do not rely on DROPi state to decide; always scrape Interrapidisimo
-        logging.info("Querying tracking (ignoring DROPi state): %s", tracking_number)
+        logging.info(
+            "Querying tracking (ignoring DROPi state): %s", tracking_number)
         web_status_raw = scraper.get_status(tracking_number)
         exp = TrackerService.explain_normalization(web_status_raw)
         web_status = exp["status"]
@@ -227,7 +250,8 @@ def update_statuses(sheets: SheetsClient, scraper: InterScraper, start_row: int 
 
         # Queue update ONLY if we have a non-empty status to avoid overwriting with blanks
         if web_status:
-            row_updates = [None] * max(web_col, int_col) # tomara el maximo de columnas para evitar errores
+            # tomara el maximo de columnas para evitar errores
+            row_updates = [None] * max(web_col, int_col)
             row_updates[web_col - 1] = web_status
             row_updates[int_col - 1] = (web_status_raw or "")
             batch_updates.append((idx, row_updates))
@@ -245,13 +269,18 @@ def update_statuses(sheets: SheetsClient, scraper: InterScraper, start_row: int 
         # Periodically flush in batches of 200 rows
         if len(batch_updates) >= 200:
             _flush_batch(sheets, batch_updates)
-            save_checkpoint({"last_row": idx, "last_tracking": tracking_number, "date": datetime.now().isoformat()})
+            save_checkpoint({
+                "last_row": idx,
+                "last_tracking": tracking_number,
+                "date": datetime.now().isoformat()
+            })
             batch_updates.clear()
 
     if batch_updates:
         _flush_batch(sheets, batch_updates)
 
-    logging.info("Statuses updated. Processed rows: %d, differences: %d", processed, len(differences))
+    logging.info("Statuses updated. Processed rows: %d, differences: %d",
+                 processed, len(differences))
 
 
 async def update_statuses_async(
@@ -273,7 +302,8 @@ async def update_statuses_async(
     headers = sheets.read_headers()
 
     # Ensure required headers
-    required_headers = ["ID DROPI", "ID TRACKING", "STATUS DROPI", "STATUS TRACKING", "Alerta", "STATUS INTERRAPIDISIMO"]
+    required_headers = ["ID DROPI", "ID TRACKING", "STATUS DROPI",
+                        "STATUS TRACKING", "Alerta", "STATUS INTERRAPIDISIMO"]
     sheets.ensure_headers(required_headers)
     headers = sheets.read_headers()
 
@@ -290,7 +320,8 @@ async def update_statuses_async(
     status_log_path = _init_status_log()
 
     # Build list of items to process
-    items: list[tuple[int, str, str, str]] = []  # (row, tracking_number, dropi_raw, dropi_norm)
+    # (row, tracking_number, dropi_raw, dropi_norm)
+    items: list[tuple[int, str, str, str]] = []
     for idx, record in enumerate(records, start=2):
         if idx < start_row:
             continue
@@ -334,15 +365,18 @@ async def update_statuses_async(
         for batch_idx, batch in enumerate(chunk(items, max(1, int(batch_size))), start=1):
             first_row = batch[0][0] if batch else None
             last_row = batch[-1][0] if batch else None
-            logging.info("Processing batch %d with %d items (rows %s-%s)", batch_idx, len(batch), first_row, last_row)
+            logging.info("Processing batch %d with %d items (rows %s-%s)",
+                         batch_idx, len(batch), first_row, last_row)
             tn_list = [tn for _, tn, _, _ in batch]
             results = await scraper.get_status_many(tn_list, rps=rps)
             status_by_tn = {tn: raw for tn, raw in results}
 
             # Optional second pass for empties in this batch (quick re-try burst)
-            missing = [tn for tn in tn_list if not (status_by_tn.get(tn) or "").strip()]
+            missing = [tn for tn in tn_list if not (
+                status_by_tn.get(tn) or "").strip()]
             if missing:
-                logging.info("Second pass for %d empty results in batch %d", len(missing), batch_idx)
+                logging.info("Second pass for %d empty results in batch %d", len(
+                    missing), batch_idx)
                 results2 = await scraper.get_status_many(missing, rps=(rps or 0.8))
                 for tn, raw in results2:
                     if raw:
@@ -389,14 +423,16 @@ async def update_statuses_async(
 
                 done_in_batch += 1
                 if done_in_batch % 50 == 0 or done_in_batch == len(batch):
-                    logging.info("Batch %d progress: %d/%d (row %d, tn %s)", batch_idx, done_in_batch, len(batch), idx, tn)
+                    logging.info("Batch %d progress: %d/%d (row %d, tn %s)",
+                                 batch_idx, done_in_batch, len(batch), idx, tn)
 
             if batch_updates:
                 _flush_batch(sheets, batch_updates)
                 batch_updates.clear()
 
             processed_total += len(batch)
-            logging.info("Batch %d done. Processed so far: %d", batch_idx, processed_total)
+            logging.info("Batch %d done. Processed so far: %d",
+                         batch_idx, processed_total)
 
             # Pause between batches to be gentle with target site and Sheets API
             if sleep_between_batches and processed_total < len(items):
@@ -407,7 +443,8 @@ async def update_statuses_async(
     finally:
         await scraper.close()
 
-    logging.info("Statuses updated (async). Processed rows: %d, differences: %d", len(items), len(differences))
+    logging.info("Statuses updated (async). Processed rows: %d, differences: %d", len(
+        items), len(differences))
 
 
 def compare_statuses_batched(
@@ -451,7 +488,8 @@ def compare_statuses_batched(
         rows.append(idx)
 
     if not rows:
-        logging.info("compare_statuses_batched: no rows in range %s-%s", start_row, end_row)
+        logging.info(
+            "compare_statuses_batched: no rows in range %s-%s", start_row, end_row)
         return
 
     def chunk(seq, size):
@@ -470,11 +508,15 @@ def compare_statuses_batched(
             if not dropi_raw and not web_raw:
                 continue
 
-            dropi_norm = TrackerService.normalize_status(dropi_raw) if dropi_raw else ""
-            web_norm = TrackerService.normalize_status(web_raw) if web_raw else ""
+            dropi_norm = TrackerService.normalize_status(
+                dropi_raw) if dropi_raw else ""
+            web_norm = TrackerService.normalize_status(
+                web_raw) if web_raw else ""
 
-            coinciden = "TRUE" if (dropi_norm and web_norm and dropi_norm == web_norm) else "FALSE"
-            alerta = TrackerService.compute_alert(dropi_norm or "PENDIENTE", web_norm or "PENDIENTE")
+            coinciden = "TRUE" if (
+                dropi_norm and web_norm and dropi_norm == web_norm) else "FALSE"
+            alerta = TrackerService.compute_alert(
+                dropi_norm or "PENDIENTE", web_norm or "PENDIENTE")
 
             cur_coinciden = str(rec.get("COINCIDEN", "")).strip().upper()
             cur_alerta = str(rec.get("ALERTA", "")).strip().upper()
@@ -502,7 +544,7 @@ def compare_statuses_batched(
         )
 
 
-def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[Any]]] ):
+def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[Any]]]):
     """Write only the exact cells that changed.
 
     Groups updates by column index and then splits into consecutive row-blocks,
@@ -527,6 +569,7 @@ def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[Any]]
         # Group into consecutive row blocks
         block: list[tuple[int, Any]] = []
         prev_row = None
+
         def flush_block():
             if not block:
                 return
@@ -554,121 +597,64 @@ def _flush_batch(sheets: SheetsClient, batch_updates: list[tuple[int, list[Any]]
             sheets.values_batch_update(chunk)
 
 
+def main() -> int:
+    """
+    Función principal de la aplicación refactorizada.
 
-def main():
-    parser = argparse.ArgumentParser(description="Interrapidísimo tracking updater")
-    parser.add_argument("--start-row", type=int, default=2, help="Start processing from this row (1-based)")
-    parser.add_argument("--end-row", type=int, default=None, help="End processing at this row (1-based, inclusive)")
-    parser.add_argument("--limit", type=int, default=None, help="Limit number of rows to process")
-    parser.add_argument("--dry-run", action="store_true", help="Run without writing changes")
-    parser.add_argument("--skip-drive", action="store_true", help="Skip Drive source ingestion and only update statuses from the existing sheet")
-    parser.add_argument("--async", dest="use_async", action="store_true", help="Use async Playwright scraper with concurrency")
-    parser.add_argument("--max-concurrency", type=int, default=3, help="Max concurrent browser pages when using --async")
-    parser.add_argument("--batch-size", type=int, default=5000, help="Batch size for async scraping (rows per browser lifecycle)")
-    parser.add_argument("--post-compare", action="store_true", help="Run compare (COINCIDEN/ALERTA) after scraping and BEFORE the daily report")
-    parser.add_argument("--compare-batch-size", type=int, default=5000, help="Batch size for post-compare step")
-    args = parser.parse_args()
+    Coordina la ejecución de todas las operaciones del sistema de tracking
+    utilizando una arquitectura modular y manejo de errores robusto.
 
-    setup_logging()
-    logging.info("Starting app")
-
-    creds = load_credentials()
-    drive = DriveClient(creds)
-    sheets = SheetsClient(creds, settings.spreadsheet_name)
-    scraper = InterScraper(headless=settings.headless)
-
+    Returns:
+        int: Código de salida (0=éxito, 1=error de negocio, 2=error fatal)
+    """
     try:
-        if not args.skip_drive:
-            latest = drive.latest_file(settings.drive_folder_id)
-            if not latest:
-                logging.error("No latest file available")
-                return 1
-            source = read_source_data(drive, latest["id"])
-            added = update_tracking_sheet(sheets, source)
-            logging.info("New rows added: %d", added)
-            if added:
-                # Log event 'Añadido al drive' with count
-                status_log_path = _init_status_log()
-                _append_event_log(status_log_path, "Añadido al drive", str(added))
-        else:
-            logging.info("--skip-drive enabled: skipping source ingestion from Drive")
+        # Fase 1: Inicialización
+        from core import (
+            initialize_application,
+            parse_command_line_arguments,
+            create_service_container
+        )
 
-        if not args.dry_run:
-            if args.use_async:
-                # Safe async runner: if there is an active loop (e.g. IDE), run the coroutine in a
-                # dedicated thread with its own loop; otherwise use asyncio.run.
-                def _run_coro_in_thread(coro):
-                    result = {
-                        "exc": None,
-                    }
+        initialize_application()
+        config = parse_command_line_arguments()
+        container = create_service_container()
 
-                    def _runner():
-                        try:
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                            loop.run_until_complete(coro)
-                        except Exception as e:
-                            result["exc"] = e
-                        finally:
-                            try:
-                                loop.close()
-                            except Exception:
-                                pass
+        # Fase 2: Procesamiento de datos de Drive
+        from core.operations import process_drive_data
+        added_rows = process_drive_data(config, container)
 
-                    try:
-                        running = asyncio.get_running_loop()
-                    except RuntimeError:
-                        running = None
+        # Fase 3: Scraping de estados
+        from core.operations import execute_status_scraping
+        execute_status_scraping(config, container)
 
-                    if running and running.is_running():
-                        t = threading.Thread(target=_runner, daemon=True)
-                        t.start()
-                        t.join()
-                        if result["exc"]:
-                            raise result["exc"]
-                    else:
-                        asyncio.run(coro)
+        # Fase 4: Análisis post-comparación (opcional)
+        from core.operations import execute_post_compare_analysis
+        execute_post_compare_analysis(config, container)
 
-                _run_coro_in_thread(update_statuses_async(
-                    sheets,
-                    settings.headless,
-                    start_row=args.start_row,
-                    end_row=args.end_row,
-                    limit=args.limit,
-                    max_concurrency=args.max_concurrency,
-                    batch_size=args.batch_size,
-                ))
-                # Post-compare step: update COINCIDEN/ALERTA before generating/append daily report
-                if args.post_compare:
-                    # Compare whole sheet after scraping, regardless of scraping range
-                    compare_statuses_batched(
-                        sheets,
-                        start_row=2,
-                        end_row=None,
-                        batch_size=args.compare_batch_size,
-                    )
-                # Generate/replace daily report from current sheet state
-                sheets.create_or_append_daily_report([], prefix=settings.daily_report_prefix)
-            else:
-                update_statuses(sheets, scraper, start_row=args.start_row, end_row=args.end_row, limit=args.limit)
-                if args.post_compare:
-                    # Compare whole sheet after scraping, regardless of scraping range
-                    compare_statuses_batched(
-                        sheets,
-                        start_row=2,
-                        end_row=None,
-                        batch_size=args.compare_batch_size,
-                    )
-                # Generate/replace daily report from current sheet state
-                sheets.create_or_append_daily_report([], prefix=settings.daily_report_prefix)
-        else:
-            logging.info("Dry-run mode: skipping status updates")
+        # Fase 5: Generación de reporte diario
+        if not config.dry_run:
+            from core.operations import generate_daily_report
+            generate_daily_report(container)
+
+        logging.info("=== APLICACIÓN COMPLETADA EXITOSAMENTE ===")
         return 0
+
+    except KeyboardInterrupt:
+        logging.warning("Ejecución interrumpida por el usuario")
+        return 1
+
     except Exception as e:
-        logging.exception("Fatal error: %s", e)
+        logging.exception(f"Error fatal en la aplicación: {str(e)}")
         return 2
+
     finally:
-        scraper.close()
+        # Cleanup de recursos
+        try:
+            if 'container' in locals() and hasattr(container, 'scraper'):
+                container.scraper.close()
+                logging.info("Recursos liberados correctamente")
+        except Exception as e:
+            logging.warning(f"Error liberando recursos: {str(e)}")
 
 
 if __name__ == "__main__":
