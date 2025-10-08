@@ -110,6 +110,7 @@ Archivo de credenciales de Google Service Account con permisos:
 La nueva hoja incluye **TODAS las columnas** del spreadsheet, pero solo para registros con `COINCIDEN=FALSE`:
 
 **Columnas principales**:
+
 - `GUIA`: Número de guía
 - `STATUS DROPI`: Estado en Dropi (normalizado)
 - `STATUS INTERRAPIDISIMO`: Texto crudo de la web (ej: "Tu envío Fue devuelto")
