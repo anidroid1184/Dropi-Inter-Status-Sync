@@ -6,13 +6,22 @@ el portal web de Interrapidísimo y actualización en Google Sheets.
 
 Responsabilidades:
 - Scraping web de estados de Interrapidísimo (sync/async)
-- Actualización de columnas STATUS TRACKING y STATUS INTERRAPIDISIMO
+- Extracción del estado crudo exactamente como aparece en la web
+- Actualización solo de columna STATUS INTERRAPIDISIMO con texto sin normalizar
 - Logging de operaciones de scraping
 - Gestión de reintentos y errores
 
+IMPORTANTE: Este scraper NO normaliza estados. Guarda el texto crudo de la web.
+Ejemplos de salida:
+  - "Tu envío Fue devuelto"
+  - "Tú envío fue entregado"
+  - "Tu envio esta En transito"
+
+La normalización y comparación se realiza en app_comparer.
+
 Autor: Sistema de Tracking Dropi-Inter
-Fecha: Octubre 2025
-Versión: 1.0.0
+Fecha: Enero 2025
+Versión: 2.0.0
 """
 
 from __future__ import annotations
@@ -182,7 +191,7 @@ def scrape_sync(
             status = scraper.get_status(tracking)
             
             if status and not dry_run:
-                sheets.update_cell(idx, "STATUS TRACKING", status)
+                # Solo guardar el estado crudo en STATUS INTERRAPIDISIMO
                 sheets.update_cell(idx, "STATUS INTERRAPIDISIMO", status)
                 
             logging.info(f"[{idx}] {tracking}: {status or 'VACIO'}")

@@ -4,10 +4,28 @@ Aplicación independiente para comparar estados entre Dropi e Interrapidísimo.
 
 ## **Responsabilidades**
 
-- Leer STATUS DROPI y STATUS TRACKING desde Google Sheets
-- Normalizar ambos estados a valores comparables
+- Leer STATUS DROPI y STATUS INTERRAPIDISIMO (texto crudo) desde Google Sheets
+- Normalizar STATUS INTERRAPIDISIMO usando `inter_map.json`
+- Comparar estados normalizados
 - Calcular columna COINCIDEN (TRUE/FALSE)
 - Actualizar Google Sheets con resultados
+
+**Flujo de datos**:
+
+1. Lee STATUS DROPI: "ENTREGADO" (ya normalizado)
+2. Lee STATUS INTERRAPIDISIMO: "Tu envío fue entregado" (texto crudo de la web)
+3. Busca en inter_map.json: {"ENTREGADO": ["tu envío fue entregado", ...]}
+4. Encuentra coincidencia → inter_normalized = "ENTREGADO"
+5. Compara: "ENTREGADO" == "ENTREGADO"
+6. Marca COINCIDEN = TRUE
+
+**Ejemplo con discrepancia**:
+
+1. STATUS DROPI: "EN_TRANSITO"
+2. STATUS INTERRAPIDISIMO: "Tu envío Fue devuelto"
+3. Normaliza usando mapa → "REENVIO"
+4. Compara: "EN_TRANSITO" != "REENVIO"
+5. Marca COINCIDEN = FALSE
 
 ## **Independencia Total**
 
@@ -67,15 +85,16 @@ app_comparer/
 ├── comparer_logging.py      # Setup de logging
 ├── comparer_credentials.py  # Carga credentials.json
 ├── comparer_sheets.py       # Cliente Google Sheets
-├── comparer_normalizer.py   # Normalización de estados
-├── comparer_alerts.py       # Cálculo de alertas
-├── dropi_map.json          # Mapeo estados Dropi
-├── inter_map.json          # Mapeo estados Inter
+├── comparer_normalizer.py   # Normalización usando mapa
+├── inter_map.json          # Mapeo palabras clave → variantes texto crudo
 ├── requirements.txt         # Dependencias
 ├── .env.example            # Template de configuración
 ├── .gitignore              # Archivos ignorados
+├── test_normalizer.py      # Script de prueba del normalizador
 └── logs/                   # Logs de la app (auto-creado)
 ```
+
+**Nota**: Ya no se usa `dropi_map.json` ni `comparer_alerts.py`.
 
 ## **Configuración**
 
@@ -96,24 +115,66 @@ Archivo de credenciales de Google Service Account con permisos:
 
 ## **Reglas de Negocio**
 
+### inter_map.json
+
+Archivo JSON con mapeo de palabras clave a variantes de texto crudo:
+
+```json
+{
+  "ENTREGADO": [
+    "entregado",
+    "tu envio fue entregado",
+    "tu envío fue entregado",
+    "tú envío fue entregado",
+    "recibido",
+    ...
+  ],
+  "REENVIO": [
+    "tu envio fue devuelto",
+    "tu envío fue devuelto",
+    "devuelto al remitente",
+    "retorno a origen",
+    ...
+  ],
+  ...
+}
+```
+
 ### Normalización
 
-Estados se normalizan a valores estándar:
+El normalizador busca coincidencias parciales:
 
-- `EN_TRANSITO`
-- `RECOLECTADO`
-- `ENTREGADO`
-- `DEVUELTO`
-- `NOVEDAD`
-- `CANCELADO`
-- `PENDIENTE`
+- Texto crudo: "Tu envío fue entregado"
+- Busca en todas las palabras clave y sus variantes
+- Encuentra: "tu envío fue entregado" en la lista de "ENTREGADO"
+- Retorna: "ENTREGADO"
 
 ### Cálculo de COINCIDEN
 
+**Entrada**:
+
+- `STATUS DROPI`: "ENTREGADO" (ya normalizado)
+- `STATUS INTERRAPIDISIMO`: "Tú envío fue entregado" (texto crudo)
+
+**Proceso**:
+
+1. Normaliza STATUS INTERRAPIDISIMO → "ENTREGADO"
+2. Normaliza STATUS DROPI (solo limpieza) → "ENTREGADO"
+3. Compara: "ENTREGADO" == "ENTREGADO"
+
+**Salida**:
+
 ```
-COINCIDEN = TRUE si dropi_norm == web_norm
-COINCIDEN = FALSE si no coinciden
+COINCIDEN = TRUE
 ```
+
+**Ejemplo con discrepancia**:
+
+- STATUS DROPI: "EN_TRANSITO"
+- STATUS INTERRAPIDISIMO: "Tu envío Fue devuelto"
+- Normalizado: "REENVIO"
+- Comparación: "EN_TRANSITO" != "REENVIO"
+- Resultado: COINCIDEN = FALSE
 
 ## **Logs**
 

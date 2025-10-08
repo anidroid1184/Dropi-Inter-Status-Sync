@@ -183,19 +183,6 @@
     "recolectado por dropi",
     "recogido en bodega"
   ],
-  "DEVUELTO": [
-    "devuelto",
-    "retorno a origen",
-    "retornado a origen",
-    "regresado a origen",
-    "devuelto al remitente",
-    "tu envio fue devuelto",
-    "tu envío fue devuelto",
-    "en proceso de devolucion",
-    "en proceso de devolución",
-    "no aceptado por destinatario",
-    "rechazado por destinatario"
-  ],
   "DEVOLUCION": [
     "devolucion",
     "devolución",
@@ -208,7 +195,17 @@
     "re despachado",
     "re-despachado",
     "nuevo envio generado",
-    "nuevo envío generado"
+    "nuevo envío generado",
+    "retorno a origen",
+    "retornado a origen",
+    "regresado a origen",
+    "devuelto al remitente",
+    "tu envio fue devuelto",
+    "tu envío fue devuelto",
+    "en proceso de devolucion",
+    "en proceso de devolución",
+    "no aceptado por destinatario",
+    "rechazado por destinatario"
   ],
   "REEXPEDICION": [
     "reexpedicion",

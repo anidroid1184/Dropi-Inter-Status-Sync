@@ -5,10 +5,13 @@ Aplicación independiente para scraping de estados de tracking desde Interrapid�
 ## 📋 Funcionalidad
 
 - Scraping de estados desde portal web de Interrapidísimo
-- Actualización de columnas STATUS TRACKING y STATUS INTERRAPIDISIMO
+- Extrae el estado **crudo** exactamente como aparece en la web (sin normalización)
+- Actualiza solo la columna STATUS INTERRAPIDISIMO con el texto crudo
 - Soporte síncrono y asíncrono
 - Procesamiento por rangos y batches
 - Logging completo de operaciones
+
+**Nota Importante**: El scraper guarda el estado tal cual aparece en la web (ej: "Tu envío Fue devuelto", "Tú envío fue entregado"). La normalización y comparación se realiza en `app_comparer`.
 
 ## 🚀 Instalación
 

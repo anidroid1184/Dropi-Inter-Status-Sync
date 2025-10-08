@@ -68,6 +68,7 @@ class SheetsClient:
     def batch_update_status(self, updates: List[Tuple[int, str]]) -> bool:
         """
         Actualiza múltiples estados en batch.
+        Solo actualiza STATUS INTERRAPIDISIMO con el estado crudo de la web.
         
         Args:
             updates: Lista de tuplas (row, status)
@@ -77,16 +78,11 @@ class SheetsClient:
         """
         try:
             headers = self.sheet.row_values(1)
-            tracking_col = headers.index("STATUS TRACKING") + 1
             inter_col = headers.index("STATUS INTERRAPIDISIMO") + 1
             
-            # Preparar actualizaciones
+            # Preparar actualizaciones solo para STATUS INTERRAPIDISIMO
             batch_data = []
             for row, status in updates:
-                batch_data.append({
-                    "range": f"{self._col_letter(tracking_col)}{row}",
-                    "values": [[status]]
-                })
                 batch_data.append({
                     "range": f"{self._col_letter(inter_col)}{row}",
                     "values": [[status]]

@@ -5,12 +5,19 @@ Aplicación independiente para comparar estados entre Dropi y Web,
 calculando coincidencias.
 
 Responsabilidades:
-- Comparar STATUS DROPI vs STATUS TRACKING
+- Leer STATUS DROPI (normalizado) y STATUS INTERRAPIDISIMO (crudo)
+- Normalizar STATUS INTERRAPIDISIMO antes de comparar
 - Calcular columna COINCIDEN (TRUE/FALSE)
-- Normalización de estados antes de comparar
+- Actualizar Google Sheets con resultados
+
+Flujo:
+1. Lee STATUS DROPI: "ENTREGADO"
+2. Lee STATUS INTERRAPIDISIMO: "Tú envío fue entregado" (crudo de la web)
+3. Normaliza STATUS INTERRAPIDISIMO: "ENTREGADO"
+4. Compara: "ENTREGADO" == "ENTREGADO" → COINCIDEN = TRUE
 
 Autor: Sistema de Tracking Dropi-Inter
-Fecha: Octubre 2025
+Fecha: Enero 2025
 Versión: 2.0.0
 """
 
@@ -97,22 +104,31 @@ def compare_statuses(
         if end_row and idx > end_row:
             break
             
-        # Obtener estados raw
-        dropi_raw = str(record.get("STATUS DROPI", "")).strip()
-        web_raw = str(record.get("STATUS TRACKING", "")).strip()
+        # Obtener estados
+        dropi_status = str(record.get("STATUS DROPI", "")).strip()
+        inter_raw = str(record.get("STATUS INTERRAPIDISIMO", "")).strip()
         
-        if not dropi_raw and not web_raw:
+        if not dropi_status and not inter_raw:
             continue
         
-        # Normalizar estados
-        dropi_norm = StatusNormalizer.normalize(dropi_raw) if dropi_raw else "PENDIENTE"
-        web_norm = StatusNormalizer.normalize(web_raw) if web_raw else "PENDIENTE"
+        # Normalizar STATUS INTERRAPIDISIMO (texto crudo → palabra clave)
+        inter_normalized = StatusNormalizer.normalize(inter_raw, source="inter")
         
-        # Calcular coincidencia
-        coinciden = "TRUE" if (dropi_norm == web_norm) else "FALSE"
+        # Normalizar STATUS DROPI (ya viene casi normalizado, solo limpiar)
+        dropi_normalized = StatusNormalizer.normalize(dropi_status, source="dropi")
+        
+        # Comparar estados normalizados
+        coinciden = "TRUE" if (dropi_normalized == inter_normalized) else "FALSE"
         
         if coinciden == "TRUE":
             total_coinciden += 1
+        
+        # Log para debugging
+        if coinciden == "FALSE":
+            logging.debug(
+                f"[{idx}] DISCREPANCIA: Dropi='{dropi_status}'→'{dropi_normalized}' "
+                f"vs Inter='{inter_raw}'→'{inter_normalized}'"
+            )
         
         # Agregar a batch de actualizaciones
         updates.append((idx, {
