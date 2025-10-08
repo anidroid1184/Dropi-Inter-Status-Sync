@@ -1,18 +1,28 @@
 """
 APP MAKE DAILY REPORT - Generador de Reportes Diarios
 
-Aplicación independiente para generar reportes Excel con discrepancias
-y subirlos a Google Drive.
+Aplicación independiente para generar reportes de discrepancias
+como nueva hoja en el mismo spreadsheet de Google Sheets.
 
 Responsabilidades:
 - Leer datos de Google Sheets
 - Filtrar registros con COINCIDEN=FALSE (discrepancias)
-- Generar archivo Excel con formato
-- Subir a Google Drive
+- Crear nueva hoja en el spreadsheet con las discrepancias
+- Formatear la nueva hoja
 - Logging de operaciones
 
+IMPORTANTE: NO genera archivos Excel ni sube a Drive.
+Crea una nueva hoja (sheet) dentro del mismo archivo de Google Sheets.
+
+Columnas incluidas en el reporte:
+- GUIA
+- STATUS DROPI
+- STATUS INTERRAPIDISIMO (texto crudo de la web)
+- COINCIDEN (siempre FALSE en el reporte)
+- ... y todas las demás columnas del spreadsheet
+
 Autor: Sistema de Tracking Dropi-Inter
-Fecha: Octubre 2025
+Fecha: Enero 2025
 Versión: 2.0.0
 """
 
@@ -20,14 +30,11 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from datetime import datetime
 
 from reporter_config import settings
 from reporter_logging import setup_logging
 from reporter_credentials import load_credentials
-from reporter_sheets import SheetsReader
-from reporter_drive import DriveUploader
-from reporter_excel import ExcelGenerator
+from reporter_sheets import SheetsManager
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -42,49 +49,41 @@ def parse_arguments() -> argparse.Namespace:
     )
     
     parser.add_argument(
-        "--output-dir",
+        "--sheet-name",
         type=str,
-        default=".",
-        help="Directorio de salida para Excel (default: actual)"
-    )
-    
-    parser.add_argument(
-        "--upload",
-        action="store_true",
-        help="Subir a Google Drive después de generar"
+        default=None,
+        help="Nombre de la hoja a crear (default: discrepancias_YYYY-MM-DD)"
     )
     
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Simular sin generar/subir archivo"
+        help="Simular sin crear hoja"
     )
     
     return parser.parse_args()
 
 
 def generate_report(
-    sheets_reader: SheetsReader,
-    excel_gen: ExcelGenerator,
-    output_dir: str,
+    sheets_manager: SheetsManager,
+    sheet_name: str | None,
     dry_run: bool
 ) -> str:
     """
-    Genera reporte Excel con discrepancias (COINCIDEN=FALSE).
+    Genera reporte creando nueva hoja con discrepancias (COINCIDEN=FALSE).
     
     Args:
-        sheets_reader: Cliente para leer Sheets
-        excel_gen: Generador de Excel
-        output_dir: Directorio de salida
+        sheets_manager: Cliente para gestionar Sheets
+        sheet_name: Nombre de la hoja a crear (None = auto)
         dry_run: Modo simulación
         
     Returns:
-        str: Ruta del archivo generado (o vacío si dry-run)
+        str: Nombre de la hoja creada (o vacío si dry-run)
     """
     logging.info("Leyendo datos de Google Sheets...")
     
     # Leer todos los registros
-    all_records = sheets_reader.read_all_records()
+    all_records = sheets_manager.read_all_records()
     
     # Filtrar solo discrepancias (COINCIDEN=FALSE)
     discrepancias = [
@@ -100,50 +99,18 @@ def generate_report(
         return ""
     
     if dry_run:
-        logging.info("[DRY-RUN] Simulación: archivo NO generado")
+        logging.info("[DRY-RUN] Simulación: hoja NO creada")
+        logging.info(f"Se crearían {len(discrepancias)} registros")
         return ""
     
-    # Generar archivo Excel
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    filename = f"discrepancias_{date_str}.xlsx"
-    
-    output_path = excel_gen.generate(
+    # Crear nueva hoja con discrepancias
+    created_sheet = sheets_manager.create_report_sheet(
         data=discrepancias,
-        output_dir=output_dir,
-        filename=filename
+        sheet_name=sheet_name
     )
     
-    logging.info(f"Reporte generado: {output_path}")
-    return output_path
-
-
-def upload_report(
-    drive_uploader: DriveUploader,
-    file_path: str,
-    dry_run: bool
-) -> str:
-    """
-    Sube reporte a Google Drive.
-    
-    Args:
-        drive_uploader: Cliente de Drive
-        file_path: Ruta del archivo a subir
-        dry_run: Modo simulación
-        
-    Returns:
-        str: ID del archivo en Drive (o vacío si dry-run)
-    """
-    if not file_path:
-        return ""
-    
-    if dry_run:
-        logging.info("[DRY-RUN] Simulación: archivo NO subido")
-        return ""
-    
-    file_id = drive_uploader.upload(file_path)
-    logging.info(f"Archivo subido a Drive: {file_id}")
-    
-    return file_id
+    logging.info(f"Hoja de reporte creada: {created_sheet}")
+    return created_sheet
 
 
 def main() -> int:
@@ -162,33 +129,20 @@ def main() -> int:
         # Inicializar servicios
         credentials = load_credentials()
         
-        sheets_reader = SheetsReader(
+        sheets_manager = SheetsManager(
             credentials,
             settings.spreadsheet_name
         )
         
-        excel_gen = ExcelGenerator()
-        
-        # Generar reporte
-        output_path = generate_report(
-            sheets_reader,
-            excel_gen,
-            args.output_dir,
+        # Generar reporte (crear nueva hoja)
+        created_sheet = generate_report(
+            sheets_manager,
+            args.sheet_name,
             args.dry_run
         )
         
-        # Subir a Drive si se solicitó
-        if args.upload and output_path:
-            drive_uploader = DriveUploader(
-                credentials,
-                settings.drive_folder_id
-            )
-            
-            upload_report(
-                drive_uploader,
-                output_path,
-                args.dry_run
-            )
+        if created_sheet:
+            logging.info(f"✓ Reporte creado en hoja: {created_sheet}")
         
         logging.info("=== REPORTER COMPLETADO ===")
         return 0

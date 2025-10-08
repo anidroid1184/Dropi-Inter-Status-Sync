@@ -1,14 +1,17 @@
 # APP MAKE DAILY REPORT - Generador de Reportes
 
-Aplicación independiente para generar reportes diarios de discrepancias en formato Excel y subirlos a Google Drive.
+Aplicación independiente para generar reportes diarios de discrepancias creando una nueva hoja en el mismo spreadsheet de Google Sheets.
 
 ## **Responsabilidades**
 
 - Leer datos de Google Sheets
 - Filtrar registros con COINCIDEN=FALSE (discrepancias)
-- Generar archivo Excel formateado
-- Subir archivo a Google Drive
+- Crear nueva hoja en el spreadsheet con las discrepancias
+- Formatear la nueva hoja (headers con color, congelar fila)
 - Logging de todas las operaciones
+
+**IMPORTANTE**: Esta app NO genera archivos Excel ni sube a Drive.  
+Crea una nueva hoja (sheet) dentro del mismo archivo de Google Sheets.
 
 ## **Independencia Total**
 
@@ -46,16 +49,13 @@ cp .env.example .env
 ## **Uso**
 
 ```bash
-# Generar reporte (guarda en directorio actual)
+# Generar reporte (crea nueva hoja en el spreadsheet)
 python reporter_app.py
 
-# Generar y subir a Drive
-python reporter_app.py --upload
+# Especificar nombre de hoja personalizado
+python reporter_app.py --sheet-name "reporte_2025-01-07"
 
-# Especificar directorio de salida
-python reporter_app.py --output-dir ./reportes
-
-# Modo dry-run (simular sin generar/subir)
+# Modo dry-run (simular sin crear hoja)
 python reporter_app.py --dry-run
 ```
 
@@ -67,14 +67,15 @@ app_make_dialy_report/
 ├── reporter_config.py       # Configuración (.env)
 ├── reporter_logging.py      # Setup de logging
 ├── reporter_credentials.py  # Carga credentials.json
-├── reporter_sheets.py       # Cliente Google Sheets (lectura)
-├── reporter_drive.py        # Cliente Google Drive (upload)
-├── reporter_excel.py        # Generador de Excel
+├── reporter_sheets.py       # Cliente Google Sheets (lectura y escritura)
 ├── requirements.txt         # Dependencias
 ├── .env.example            # Template de configuración
 ├── .gitignore              # Archivos ignorados
+├── test_filter.py          # Script de prueba del filtrado
 └── logs/                   # Logs de la app (auto-creado)
 ```
+
+**Nota**: `reporter_drive.py` y `reporter_excel.py` ya no se usan.
 
 ## **Configuración**
 
@@ -82,37 +83,61 @@ app_make_dialy_report/
 
 ```env
 SPREADSHEET_NAME=nombre_del_spreadsheet
-DRIVE_FOLDER_ID=id_de_carpeta_en_drive
 LOG_LEVEL=INFO
 ```
 
-### Obtener `DRIVE_FOLDER_ID`
-
-1. Abre Google Drive
-2. Navega a la carpeta donde quieres subir reportes
-3. Copia el ID de la URL: `https://drive.google.com/drive/folders/[ID_AQUI]`
+**Nota**: Ya no se necesita `DRIVE_FOLDER_ID`.
 
 ### `credentials.json`
 
 Archivo de credenciales de Google Service Account con permisos:
 
-- Google Sheets API (lectura)
-- Google Drive API (escritura)
+- Google Sheets API (lectura y escritura)
 
 ## **Flujo de Operación**
 
-1. **Lectura**: Lee todos los registros de Google Sheets
+1. **Lectura**: Lee todos los registros de la hoja principal de Google Sheets
 2. **Filtrado**: Filtra solo registros con `COINCIDEN=FALSE` (discrepancias)
-3. **Generación**: Crea archivo Excel con formato profesional
-4. **Upload** (opcional): Sube archivo a carpeta de Drive especificada
-5. **Logging**: Registra todas las operaciones en logs/
+3. **Creación**: Crea una nueva hoja en el mismo spreadsheet
+4. **Escritura**: Escribe las discrepancias en la nueva hoja
+5. **Formato**: Aplica formato a los headers (color azul, texto blanco, negrita)
+6. **Logging**: Registra todas las operaciones en logs/
 
-## **Formato del Excel**
+## **Formato de la Hoja Creada**
 
-- Headers con fondo azul y texto blanco
-- Autoajuste de columnas
-- Alineación centrada de headers
-- Nombre: `discrepancias_YYYY-MM-DD.xlsx`
+### Estructura del Reporte
+
+La nueva hoja incluye **TODAS las columnas** del spreadsheet, pero solo para registros con `COINCIDEN=FALSE`:
+
+**Columnas principales**:
+- `GUIA`: Número de guía
+- `STATUS DROPI`: Estado en Dropi (normalizado)
+- `STATUS INTERRAPIDISIMO`: Texto crudo de la web (ej: "Tu envío Fue devuelto")
+- `COINCIDEN`: Siempre "FALSE" en el reporte (por eso es discrepancia)
+- ... todas las demás columnas del spreadsheet
+
+### Formato Visual
+
+- Headers con fondo azul (#4472C4) y texto blanco en negrita
+- Primera fila congelada (frozen)
+- Headers centrados
+- Nombre de hoja: `discrepancias_YYYY-MM-DD` (o personalizado)
+
+### Ejemplo de Discrepancia
+
+```
+GUIA: 12345
+STATUS DROPI: EN_TRANSITO
+STATUS INTERRAPIDISIMO: Tu envío Fue devuelto
+COINCIDEN: FALSE
+```
+
+Esto significa que Dropi dice "EN_TRANSITO" pero la web de Interrapidísimo muestra "Tu envío Fue devuelto" (que se normaliza a "REENVIO"), por lo que hay una discrepancia.
+
+### Ubicación
+
+La hoja se crea en el **mismo archivo de Google Sheets** donde están los datos principales.  
+Puedes verla en las pestañas inferiores del spreadsheet.
 
 ## **Logs**
 
@@ -133,17 +158,13 @@ Solución: Copia el archivo de credenciales de Google a este directorio.
 
 Solución: Crea el archivo `.env` desde `.env.example` y configúralo.
 
-### `ValueError: DRIVE_FOLDER_ID es requerida`
-
-Solución: Agrega el ID de carpeta de Drive en `.env`.
-
 ### `gspread.exceptions.SpreadsheetNotFound`
 
 Solución: Verifica que el nombre del spreadsheet en `.env` sea correcto y que la cuenta de servicio tenga acceso.
 
-### Error al subir a Drive
+### `gspread.exceptions.APIError: Permission denied`
 
-Solución: Verifica que la cuenta de servicio tenga permisos de escritura en la carpeta de Drive.
+Solución: Verifica que la cuenta de servicio tenga permisos de **edición** en el spreadsheet (no solo lectura).
 
 ## **Testing**
 
