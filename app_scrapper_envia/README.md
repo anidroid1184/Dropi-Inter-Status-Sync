@@ -45,27 +45,42 @@ app_scrapper_envia/
 ## 📝 Uso
 
 ```bash
-# Scraping síncrono básico
-python scraper_app.py
+# Modo síncrono (guarda uno por uno, más seguro)
+python scraper_app.py --sync
 
-# Scraping asíncrono con concurrencia (RECOMENDADO para grandes volúmenes)
+# Modo asíncrono (guarda batch de 40 guías, más rápido - RECOMENDADO)
 python scraper_app.py --async --concurrency 3
 
+# Sin flag: usa modo síncrono por defecto
+python scraper_app.py
+
 # Solo procesar filas sin estado
-python scraper_app.py --only-empty
+python scraper_app.py --async --only-empty
 
 # Modo simulación (sin escribir cambios)
 python scraper_app.py --dry-run
 
 # Procesar rango específico
-python scraper_app.py --start-row 2 --end-row 100
+python scraper_app.py --async --start-row 2 --end-row 100
 
 # Limitar cantidad de filas
-python scraper_app.py --limit 50
+python scraper_app.py --async --limit 50
 
-# Batch size personalizado (por defecto: 40)
+# Batch size personalizado (máximo: 40 guías del sitio)
 python scraper_app.py --async --batch-size 30
 ```
+
+## 🔄 Diferencias entre Modos
+
+| Característica       | --sync                        | --async                         |
+| -------------------- | ----------------------------- | ------------------------------- |
+| **Guardado**         | Uno por uno                   | Por batch de 40 guías           |
+| **Velocidad**        | 🐌 Más lento                  | ⚡ Mucho más rápido             |
+| **Seguridad**        | 🔒 Máxima (pierde 1 guía max) | ⚠️ Media (pierde 1 batch max)   |
+| **API Calls**        | Muchas (1 por guía)           | Pocas (1 por batch)             |
+| **Recomendado para** | Lotes pequeños                | **Lotes grandes (recomendado)** |
+
+**💡 Tip**: Para Envía, el modo `--async` es altamente recomendado porque procesa 40 guías a la vez en 17track.net.
 
 ## 🌐 Cómo Funciona
 
@@ -154,12 +169,17 @@ python scraper_app.py --dry-run --limit 10
 
 ## 🔧 Parámetros
 
+- `--sync`: Usar scraper síncrono (guarda uno por uno)
+- `--async`: Usar scraper asíncrono (guarda batch de 40 guías)
 - `--start-row`: Fila inicial (default: 2)
 - `--end-row`: Fila final (default: todas)
 - `--limit`: Límite de filas
-- `--async`: Usar scraper asíncrono
-- `--concurrency`: Páginas concurrentes (default: 3)
-- `--batch-size`: Tamaño de batch (default: 5000)
+- `--concurrency`: Páginas concurrentes (solo --async, default: 3)
+- `--batch-size`: Tamaño de batch (default: 40, máximo del sitio)
 - `--only-empty`: Solo filas sin estado
 - `--dry-run`: Simular sin escribir
+
+**Nota**: Si no especificas `--sync` ni `--async`, usa modo síncrono por defecto.
+
+**💡 Recomendación**: Usa `--async` para aprovechar el procesamiento por lotes de 17track.net.
 ```

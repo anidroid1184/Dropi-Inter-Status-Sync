@@ -74,18 +74,26 @@ def parse_arguments() -> argparse.Namespace:
         help="Límite de filas a procesar"
     )
 
-    parser.add_argument(
+    # Grupo mutuamente exclusivo para modo de scraping
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
         "--async",
         dest="use_async",
         action="store_true",
-        help="Usar scraper asíncrono"
+        help="Usar scraper asíncrono (guarda por batch de 40 guías)"
+    )
+    mode_group.add_argument(
+        "--sync",
+        dest="use_sync",
+        action="store_true",
+        help="Usar scraper síncrono (guarda uno por uno)"
     )
 
     parser.add_argument(
         "--concurrency",
         type=int,
         default=3,
-        help="Páginas concurrentes (default: 3)"
+        help="Páginas concurrentes (solo para --async, default: 3)"
     )
 
     parser.add_argument(
@@ -190,22 +198,41 @@ def scrape_sync(
         return 0
 
     processed = 0
-    for idx, tracking in items:
-        try:
-            status = scraper.get_status(tracking)
+    saved_count = 0
 
-            if status and not dry_run:
-                # Solo guardar el estado crudo en STATUS TRANSPORTADORA
-                sheets.update_cell(idx, "STATUS TRANSPORTADORA", status)
+    try:
+        for idx, tracking in items:
+            try:
+                status = scraper.get_status(tracking)
 
-            logging.info(f"[{idx}] {tracking}: {status or 'VACIO'}")
-            processed += 1
+                if status and not dry_run:
+                    # Guardar inmediatamente el estado
+                    sheets.update_cell(idx, "STATUS TRANSPORTADORA", status)
+                    saved_count += 1
+                    logging.info(
+                        f"[{idx}] {tracking}: {status} - ✓ Guardado"
+                    )
+                else:
+                    logging.info(f"[{idx}] {tracking}: {status or 'VACIO'}")
 
-        except Exception as e:
-            logging.error(f"Error procesando {tracking}: {e}")
-            continue
+                processed += 1
 
-    logging.info(f"Scraping completado: {processed} filas procesadas")
+            except Exception as e:
+                logging.error(f"Error procesando {tracking}: {e}")
+                continue
+
+    except KeyboardInterrupt:
+        logging.warning("\n⚠️  Interrupción detectada por el usuario")
+        logging.info(
+            f"✓ Progreso guardado: {saved_count} de {processed} "
+            f"filas procesadas"
+        )
+        raise
+
+    logging.info(
+        f"Scraping completado: {processed} filas procesadas, "
+        f"{saved_count} guardadas"
+    )
     return processed
 
 
@@ -252,31 +279,61 @@ async def scrape_async(
     try:
         await scraper.start()
 
-        # Procesar en batches
+        # Procesar en batches con guardado incremental
         total_processed = 0
-        for i in range(0, len(items), batch_size):
-            batch = items[i:i + batch_size]
-            tracking_numbers = [tn for _, tn in batch]
 
-            logging.info(f"Procesando batch: {len(batch)} items")
-            results = await scraper.get_status_many(tracking_numbers)
-            status_map = dict(results)
+        try:
+            for i in range(0, len(items), batch_size):
+                batch = items[i:i + batch_size]
+                tracking_numbers = [tn for _, tn in batch]
 
-            if not dry_run:
-                updates = []
-                for idx, tn in batch:
-                    status = status_map.get(tn, "")
-                    if status:
-                        updates.append((idx, status))
-
-                # Actualizar en la columna STATUS TRANSPORTADORA
-                sheets.batch_update_status(
-                    updates,
-                    column="STATUS TRANSPORTADORA"
+                logging.info(
+                    f"Procesando batch {i//batch_size + 1}/"
+                    f"{(len(items) + batch_size - 1)//batch_size}: "
+                    f"{len(batch)} items"
                 )
 
-            total_processed += len(batch)
-            logging.info(f"Progreso: {total_processed}/{len(items)}")
+                try:
+                    results = await scraper.get_status_many(tracking_numbers)
+                    status_map = dict(results)
+
+                    if not dry_run:
+                        updates = []
+                        for idx, tn in batch:
+                            status = status_map.get(tn, "")
+                            if status:
+                                updates.append((idx, status))
+
+                        # Guardar inmediatamente después de cada batch
+                        if updates:
+                            logging.info(
+                                f"Guardando {len(updates)} resultados..."
+                            )
+                            sheets.batch_update_status(
+                                updates,
+                                column="STATUS TRANSPORTADORA"
+                            )
+                            logging.info("✓ Resultados guardados exitosamente")
+
+                    total_processed += len(batch)
+                    logging.info(f"Progreso: {total_processed}/{len(items)}")
+
+                except Exception as e:
+                    logging.error(
+                        f"Error procesando batch {i//batch_size + 1}: {e}"
+                    )
+                    # Continuar con el siguiente batch
+                    continue
+
+        except KeyboardInterrupt:
+            logging.warning(
+                "\n⚠️  Interrupción detectada por el usuario"
+            )
+            logging.info(
+                f"✓ Progreso guardado hasta el momento: "
+                f"{total_processed}/{len(items)} filas procesadas"
+            )
+            raise
 
         logging.info(f"Scraping asíncrono completado: {total_processed} filas")
         return total_processed
@@ -337,11 +394,30 @@ def main() -> int:
         return 0
 
     except KeyboardInterrupt:
-        logging.warning("Proceso interrumpido por usuario")
-        return 1
+        logging.warning("\n" + "="*60)
+        logging.warning("⚠️  PROCESO INTERRUMPIDO POR USUARIO")
+        logging.warning("="*60)
+        logging.info(
+            "✓ Los resultados obtenidos hasta el momento "
+            "ya han sido guardados"
+        )
+        logging.info(
+            "💡 Puedes reanudar el proceso ejecutando el comando "
+            "con --only-empty"
+        )
+        logging.warning("="*60)
+        return 130  # Exit code estándar para SIGINT
 
     except Exception as e:
-        logging.exception(f"Error fatal: {e}")
+        logging.error("\n" + "="*60)
+        logging.error("❌ ERROR FATAL")
+        logging.error("="*60)
+        logging.exception(f"Error: {e}")
+        logging.info(
+            "💡 Revisa los logs para más detalles. "
+            "Los resultados guardados hasta el momento se mantienen."
+        )
+        logging.error("="*60)
         return 1
 
 
