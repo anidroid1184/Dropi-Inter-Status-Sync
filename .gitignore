@@ -25,3 +25,4 @@ Dockerfile
 /recreacion_linux/
 scripts/_legacy/
 deprecated/
+credentials/
