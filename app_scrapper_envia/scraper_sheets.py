@@ -65,26 +65,31 @@ class SheetsClient:
             logging.error(f"Error actualizando celda [{row}, {column_name}]: {e}")
             return False
     
-    def batch_update_status(self, updates: List[Tuple[int, str]]) -> bool:
+    def batch_update_status(
+        self,
+        updates: List[Tuple[int, str]],
+        column: str = "STATUS ENVIA"
+    ) -> bool:
         """
         Actualiza múltiples estados en batch.
-        Solo actualiza STATUS INTERRAPIDISIMO con el estado crudo de la web.
+        Solo actualiza STATUS ENVIA con el estado crudo de la web.
         
         Args:
             updates: Lista de tuplas (row, status)
+            column: Nombre de la columna a actualizar (default: STATUS ENVIA)
             
         Returns:
             bool: True si exitoso
         """
         try:
             headers = self.sheet.row_values(1)
-            inter_col = headers.index("STATUS INTERRAPIDISIMO") + 1
+            status_col = headers.index(column) + 1
             
-            # Preparar actualizaciones solo para STATUS INTERRAPIDISIMO
+            # Preparar actualizaciones solo para STATUS ENVIA
             batch_data = []
             for row, status in updates:
                 batch_data.append({
-                    "range": f"{self._col_letter(inter_col)}{row}",
+                    "range": f"{self._col_letter(status_col)}{row}",
                     "values": [[status]]
                 })
             

@@ -36,8 +36,8 @@ from typing import List, Tuple
 from scraper_config import settings
 from scraper_logging import setup_logging
 from scraper_sheets import SheetsClient
-from scraper_web import InterScraper
-from scraper_web_async import AsyncInterScraper
+from scraper_web import EnviaScraper
+from scraper_web_async import AsyncEnviaScraper
 from scraper_credentials import load_credentials
 
 
@@ -155,7 +155,7 @@ def filter_records(
 
 def scrape_sync(
     sheets: SheetsClient,
-    scraper: InterScraper,
+    scraper: EnviaScraper,
     start_row: int,
     end_row: int | None,
     limit: int | None,
@@ -190,14 +190,14 @@ def scrape_sync(
     for idx, tracking in items:
         try:
             status = scraper.get_status(tracking)
-
+            
             if status and not dry_run:
-                # Solo guardar el estado crudo en STATUS INTERRAPIDISIMO
-                sheets.update_cell(idx, "STATUS INTERRAPIDISIMO", status)
-
+                # Solo guardar el estado crudo en STATUS ENVIA
+                sheets.update_cell(idx, "STATUS ENVIA", status)
+                
             logging.info(f"[{idx}] {tracking}: {status or 'VACIO'}")
             processed += 1
-
+            
         except Exception as e:
             logging.error(f"Error procesando {tracking}: {e}")
             continue
@@ -241,7 +241,7 @@ async def scrape_async(
         logging.warning("No hay items para procesar")
         return 0
 
-    scraper = AsyncInterScraper(
+    scraper = AsyncEnviaScraper(
         headless=settings.headless,
         max_concurrency=concurrency
     )
@@ -266,7 +266,8 @@ async def scrape_async(
                     if status:
                         updates.append((idx, status))
 
-                sheets.batch_update_status(updates)
+                # Actualizar en la columna STATUS ENVIA
+                sheets.batch_update_status(updates, column="STATUS ENVIA")
 
             total_processed += len(batch)
             logging.info(f"Progreso: {total_processed}/{len(items)}")
@@ -312,7 +313,7 @@ def main() -> int:
                 )
             )
         else:
-            scraper = InterScraper(headless=settings.headless)
+            scraper = EnviaScraper(headless=settings.headless)
             try:
                 processed = scrape_sync(
                     sheets,

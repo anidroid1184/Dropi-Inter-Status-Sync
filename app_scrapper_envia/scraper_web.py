@@ -1,141 +1,219 @@
 from __future__ import annotations
 import logging
+import re
 from contextlib import suppress
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import (
+    sync_playwright,
+    TimeoutError as PlaywrightTimeoutError
+)
+from typing import List, Tuple
 
 
-class InterScraper:
-    """Playwright-based scraper to fetch tracking status from Interrapidísimo.
+class EnviaScraper:
+    """Playwright-based scraper to fetch tracking status from Envía via 17track.
 
-    This implementation keeps a single browser process alive and creates a new
-    context per query to avoid state leakage. It returns the RAW status text
-    found in the popup when possible; normalization is handled elsewhere by
-    `TrackerService.normalize_status` using JSON mappings.
+    This implementation processes tracking numbers in batches of up to 40
+    using the batch tracking interface at 17track.net. Status text is returned
+    RAW (without time indicators like '(2 Días)').
+    
+    Normalization is handled elsewhere by TrackerService using JSON mappings.
     """
 
-    def __init__(self, headless: bool = True):
+    def __init__(self, headless: bool = True, batch_size: int = 40):
         self._pw = sync_playwright().start()
         self._headless = headless
+        self._batch_size = min(batch_size, 40)  # Max 40 per batch
         logging.info("Launching Playwright Chromium. headless=%s", headless)
-        # Chromium tends to be the most stable target for Playwright
+        
         launch_args = [
             "--no-sandbox",
             "--disable-dev-shm-usage",
         ]
-        # Maximize and slow down actions when headful to observe behavior
         slow_mo = 250 if not headless else 0
         if not headless:
             launch_args.append("--start-maximized")
+            
         self.browser = self._pw.chromium.launch(
             headless=headless,
             slow_mo=slow_mo,
             args=launch_args,
         )
 
-    def get_status(self, tracking_number: str) -> str:
-        """Return RAW status text found in popup (normalization is external).
+    def _clean_status(self, status_text: str) -> str:
+        """Remove time indicators like '(2 Días)' from status."""
+        # Remove patterns like (X Días), (X días), etc.
+        cleaned = re.sub(r'\s*\(\d+\s+[Dd]ías?\)', '', status_text)
+        return cleaned.strip()
 
-        Fallbacks to an empty string when nothing is found so that the caller
-        can decide normalization defaults.
+    def get_status(self, tracking_number: str) -> str:
+        """
+        Get status for a single tracking number.
+        Uses batch processing with just one number.
+        """
+        results = self.get_status_batch([tracking_number])
+        if results and len(results) > 0:
+            return results[0][1]
+        return ""
+
+    def get_status_batch(
+        self,
+        tracking_numbers: List[str]
+    ) -> List[Tuple[str, str]]:
+        """
+        Process a batch of up to 40 tracking numbers.
+        Returns list of (tracking_id, status) tuples.
         """
         context = None
         page = None
-        popup = None
+        
         try:
-            # In headful mode, let the OS/window manage size (viewport=None)
-            if getattr(self, "_headless", True):
-                context = self.browser.new_context(viewport={"width": 1280, "height": 800})
+            # Create new context
+            if self._headless:
+                context = self.browser.new_context(
+                    viewport={"width": 1920, "height": 1080}
+                )
             else:
                 context = self.browser.new_context(viewport=None)
+                
             page = context.new_page()
-            page.goto("https://interrapidisimo.com/sigue-tu-envio/", timeout=45000, wait_until="domcontentloaded")
+            
+            # Navigate to 17track Envía page
+            url = "https://www.17track.net/es/carriers/env%C3%ADa-envia"
+            logging.info(
+                "Processing batch of %d tracking numbers",
+                len(tracking_numbers)
+            )
+            page.goto(url, timeout=45000, wait_until="domcontentloaded")
+            
+            # Wait for page to load
+            page.wait_for_timeout(2000)
 
-            # Accept cookie banners if any to avoid blocking the input
+            # Try to accept cookie banners
             with suppress(Exception):
-                page.get_by_role("button", name=lambda n: n and ("acept" in n.lower() or "de acuerdo" in n.lower() or "entendido" in n.lower())).click(timeout=2000)
+                cookie_btn = page.locator(
+                    'button:has-text("Aceptar")'
+                ).first
+                cookie_btn.click(timeout=2000)
+                logging.debug("Cookie banner clicked")
 
-            # Prefer the visible input among desktop/mobile selectors
-            # The user confirmed mobile input: <input class="buscarGuiaInput" id="inputGuideMovil" ...>
-            input_css = "#inputGuide:visible, #inputGuideMovil:visible, input.buscarGuiaInput:visible"
-            try:
-                loc = page.locator(input_css).first
-                loc.wait_for(state="visible", timeout=15000)
-                loc.scroll_into_view_if_needed()
-            except PlaywrightTimeoutError:
-                logging.error("Visible tracking input not found for %s", tracking_number)
-                return ""
+            # Find the textarea
+            textarea = page.locator(
+                '#auto-size-textarea.batch_track_textarea__rhhSa'
+            )
+            textarea.wait_for(state="visible", timeout=15000)
+            textarea.scroll_into_view_if_needed()
 
-            # Some sites with type=number inputs behave better with fill than type
-            with suppress(Exception):
-                loc.fill("")
-            loc.fill(tracking_number)
+            # Fill with tracking numbers (max 40, one per line)
+            batch_text = "\n".join(tracking_numbers[:40])
+            textarea.fill(batch_text)
+            logging.debug("Filled %d tracking numbers", len(tracking_numbers))
 
-            # Follow the new tab that contains the detail status (context.expect_page is robust)
-            try:
-                with context.expect_page(timeout=20000) as new_page_info:
-                    loc.press("Enter")
-                popup = new_page_info.value
-                with suppress(Exception):
-                    popup.bring_to_front()
-            except PlaywrightTimeoutError:
-                # Fallback: no new page; continue in same page
-                popup = None
-                with suppress(PlaywrightTimeoutError):
-                    page.wait_for_load_state("domcontentloaded", timeout=15000)
+            # Find and click the search/track button
+            track_button = page.locator(
+                'button:has-text("Rastrear"), button:has-text("Track")'
+            ).first
+            track_button.click()
+            logging.debug("Clicked track button")
 
-            # Determine target (new tab or same page)
-            # Note: Interrapidísimo suele abrir una nueva pestaña
+            # Wait for results to load
+            page.wait_for_timeout(5000)  # Give time for all results
 
-            target = popup if popup is not None else page
-
-            # Wait for content to render a bit
-            with suppress(PlaywrightTimeoutError):
-                target.wait_for_load_state("domcontentloaded", timeout=15000)
-
-            status_text: str | None = None
-
-            # Strict extraction: find the content card for current status and read the bold line
-            try:
-                # Anchor by the title 'Estado actual de tu envío' near the content card
-                title = target.locator("css=div.content p.title-current-state").first
-                title.wait_for(state="visible", timeout=15000)
-                value = title.locator("xpath=following-sibling::p[contains(@class,'font-weight-600')][1]")
-                value.wait_for(state="visible", timeout=15000)
-                txt = value.inner_text().strip()
-                if txt:
-                    status_text = txt
-            except PlaywrightTimeoutError:
-                # As a backup, try a direct CSS to the value inside the content card
-                with suppress(Exception):
-                    value2 = target.locator("css=div.content p.font-weight-600").first
-                    value2.wait_for(state="visible", timeout=5000)
-                    txt2 = value2.inner_text().strip()
-                    if txt2:
-                        status_text = txt2
-
-            # Fallback: only if content card text not found, use 'Sin novedad' badge
-            if not status_text:
-                with suppress(Exception):
-                    novelty = target.locator("css=p.guide-WhitOut-Novelty").first
-                    novelty.wait_for(state="visible", timeout=3000)
-                    txt = novelty.inner_text().strip()
-                    if txt:
-                        status_text = txt
-
-            return status_text or ""
+            # Extract all results
+            results = self._extract_results_from_page(page)
+            
+            logging.info("Batch complete: %d results extracted", len(results))
+            
+            # Fill missing results with empty status
+            result_dict = dict(results)
+            complete_results = []
+            for tn in tracking_numbers:
+                status = result_dict.get(tn, "")
+                complete_results.append((tn, status))
+            
+            return complete_results
+            
         except Exception as e:
-            logging.error("Scraper error for %s: %s", tracking_number, e)
-            return ""
+            logging.error("Error processing batch: %s", e)
+            # Return empty results for all tracking numbers
+            return [(tn, "") for tn in tracking_numbers]
+            
         finally:
-            with suppress(Exception):
-                if popup:
-                    popup.close()
             with suppress(Exception):
                 if page:
                     page.close()
             with suppress(Exception):
                 if context:
                     context.close()
+
+    def _extract_results_from_page(
+        self,
+        page
+    ) -> List[Tuple[str, str]]:
+        """
+        Extract all tracking results from the page.
+        Returns list of (tracking_id, status) tuples.
+        """
+        results: List[Tuple[str, str]] = []
+        
+        try:
+            # Find all result containers
+            result_divs = page.locator(
+                'div.flex.items-center.gap-2:'
+                'has(span.text-sm.font-medium.truncate)'
+            )
+            
+            count = result_divs.count()
+            logging.info("Found %d result divs", count)
+            
+            if count == 0:
+                # Fallback: try broader selector
+                logging.debug("Trying fallback selector...")
+                result_divs = page.locator(
+                    'div:has(span[title]):'
+                    'has(div.text-sm.text-text-primary)'
+                )
+                count = result_divs.count()
+                logging.info("Fallback found %d result divs", count)
+            
+            for i in range(count):
+                try:
+                    div = result_divs.nth(i)
+                    
+                    # Extract tracking ID from title attribute or text
+                    id_locator = div.locator(
+                        'span.text-sm.font-medium.truncate'
+                    )
+                    tracking_id = id_locator.get_attribute('title')
+                    
+                    if not tracking_id:
+                        tracking_id = id_locator.inner_text()
+                    
+                    tracking_id = tracking_id.strip()
+                    
+                    # Extract status (without time)
+                    status_locator = div.locator(
+                        'div.text-sm.text-text-primary.'
+                        'flex.items-center.gap-1'
+                    )
+                    status_text = status_locator.inner_text()
+                    status_text = self._clean_status(status_text)
+                    
+                    if tracking_id and status_text:
+                        results.append((tracking_id, status_text))
+                        logging.debug(
+                            "Extracted: %s -> %s",
+                            tracking_id,
+                            status_text
+                        )
+                    
+                except Exception as e:
+                    logging.warning("Error extracting result %d: %s", i, e)
+                    continue
+            
+        except Exception as e:
+            logging.error("Error extracting results: %s", e)
+        
+        return results
 
     def close(self):
         with suppress(Exception):

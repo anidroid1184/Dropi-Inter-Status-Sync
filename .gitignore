@@ -6,6 +6,11 @@ __pycache__/
 venv/
 .env
 
+# Archivos temporales de desarrollo
+*_new.py
+*_old.py
+*_backup.py
+
 # Credenciales y datos locales
 credentials.json
 checkpoint.json
