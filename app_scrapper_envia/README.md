@@ -74,14 +74,25 @@ Este scraper utiliza el sitio 17track.net que permite rastrear envíos de Envía
 1. **URL**: `https://www.17track.net/es/carriers/envía-envia`
 2. **Método**: Ingresa hasta 40 guías en un textarea (una por línea)
 3. **Resultados**: Los resultados se cargan en la misma página (no abre nueva pestaña)
-4. **Extracción**: 
+4. **Extracción**:
    - ID de tracking desde: `<span title="014152617422" class="text-sm font-medium truncate">`
    - Status desde: `<div class="text-sm text-text-primary flex items-center gap-1">En tránsito (2 Días)</div>`
    - El status se limpia para remover el tiempo: "En tránsito (2 Días)" -> "En tránsito"
 
 ## 📊 Columna Actualizada
 
-- **STATUS ENVIA**: Columna donde se guarda el estado crudo de la web
+- **STATUS TRANSPORTADORA**: Columna donde se guarda el estado crudo de la web
+
+## 📊 Estructura de la Hoja
+
+La hoja de Google Sheets debe tener las siguientes columnas:
+
+- **A - ID DROPI**: ID interno de Dropi
+- **B - ID TRACKING**: Número de guía de Envía (se usa para scraping)
+- **C - TRANSPORTADORA**: Nombre de la transportadora (debe contener "ENVIA")
+- **D - STATUS DROPI**: Estado en Dropi
+- **E - STATUS TRANSPORTADORA**: Estado de la transportadora (se actualiza por el scraper)
+- **F - COINCIDEN**: Indicador de coincidencia de estados
 
 ## 🔄 Flujo de Trabajo
 
@@ -118,16 +129,20 @@ Este scraper utiliza el sitio 17track.net que permite rastrear envíos de Envía
 - Procesa hasta 40 guías por batch para máxima eficiencia
 - Usa Playwright para navegación web robusta
 - Maneja reintentos automáticos en caso de errores
-python scraper_app.py --async --concurrency 5
+  python scraper_app.py --async --concurrency 5
 
 # Procesar rango específico
+
 python scraper_app.py --start-row 100 --end-row 200
 
 # Solo procesar filas sin estado
+
 python scraper_app.py --only-empty
 
 # Modo dry-run (simulación)
+
 python scraper_app.py --dry-run --limit 10
+
 ```
 
 ## 📦 Dependencias
@@ -147,3 +162,4 @@ python scraper_app.py --dry-run --limit 10
 - `--batch-size`: Tamaño de batch (default: 5000)
 - `--only-empty`: Solo filas sin estado
 - `--dry-run`: Simular sin escribir
+```

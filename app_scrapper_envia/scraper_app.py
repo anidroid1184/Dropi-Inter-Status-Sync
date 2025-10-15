@@ -125,7 +125,7 @@ def filter_records(
         start_row: Fila inicial (1-based)
         end_row: Fila final (inclusiva)
         limit: Límite de registros a procesar
-        only_empty: Solo procesar si STATUS TRACKING está vacío
+        only_empty: Solo procesar si STATUS TRANSPORTADORA está vacío
 
     Returns:
         List[Tuple[int, str]]: Lista de (row_num, tracking_id)
@@ -144,7 +144,10 @@ def filter_records(
         if not tracking:
             continue
 
-        current_status = str(record.get("STATUS TRACKING", "")).strip()
+        # Verificar si solo procesar filas vacías
+        current_status = str(
+            record.get("STATUS TRANSPORTADORA", "")
+        ).strip()
         if only_empty and current_status:
             continue
 
@@ -190,14 +193,14 @@ def scrape_sync(
     for idx, tracking in items:
         try:
             status = scraper.get_status(tracking)
-            
+
             if status and not dry_run:
-                # Solo guardar el estado crudo en STATUS ENVIA
-                sheets.update_cell(idx, "STATUS ENVIA", status)
-                
+                # Solo guardar el estado crudo en STATUS TRANSPORTADORA
+                sheets.update_cell(idx, "STATUS TRANSPORTADORA", status)
+
             logging.info(f"[{idx}] {tracking}: {status or 'VACIO'}")
             processed += 1
-            
+
         except Exception as e:
             logging.error(f"Error procesando {tracking}: {e}")
             continue
@@ -266,8 +269,11 @@ async def scrape_async(
                     if status:
                         updates.append((idx, status))
 
-                # Actualizar en la columna STATUS ENVIA
-                sheets.batch_update_status(updates, column="STATUS ENVIA")
+                # Actualizar en la columna STATUS TRANSPORTADORA
+                sheets.batch_update_status(
+                    updates,
+                    column="STATUS TRANSPORTADORA"
+                )
 
             total_processed += len(batch)
             logging.info(f"Progreso: {total_processed}/{len(items)}")

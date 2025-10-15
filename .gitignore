@@ -31,3 +31,4 @@ Dockerfile
 scripts/_legacy/
 deprecated/
 credentials/
+*.zip
