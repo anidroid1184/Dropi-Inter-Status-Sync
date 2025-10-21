@@ -281,13 +281,13 @@ class AsyncEnviaScraper:
             logging.debug("[PW] Navigating to %s", url)
             await page.goto(
                 url,
-                timeout=max(45000, self._timeout),
-                wait_until="networkidle"  # Esperar a que la red esté inactiva
+                timeout=max(60000, self._timeout),
+                wait_until="domcontentloaded"  # Más rápido que networkidle
             )
 
-            # Wait for page to fully render
+            # Wait for page to fully render and load dynamic content
             logging.debug("[PW] Waiting for page to render...")
-            await asyncio.sleep(3)
+            await asyncio.sleep(5)  # Esperar más tiempo para contenido dinámico
 
             # Try to accept cookie banners
             with suppress(Exception):
@@ -345,36 +345,107 @@ class AsyncEnviaScraper:
             await textarea.scroll_into_view_if_needed()
             await asyncio.sleep(0.5)
 
-            # Clear and fill textarea
-            await textarea.click()
-            await textarea.fill("")
+            # Preparar texto del batch
             batch_text = "\n".join(tracking_numbers[:40])
-            await textarea.fill(batch_text)
-            logging.info(
-                "[PW] Filled %d tracking numbers in textarea",
-                len(tracking_numbers)
-            )
+            
+            # Método 1: Intentar con JavaScript (más confiable)
+            logging.debug("[PW] Filling textarea with JavaScript...")
+            try:
+                await textarea.evaluate(
+                    """(element, text) => {
+                        element.value = text;
+                        element.dispatchEvent(new Event('input', { bubbles: true }));
+                        element.dispatchEvent(new Event('change', { bubbles: true }));
+                    }""",
+                    batch_text
+                )
+                logging.info(
+                    "[PW] Filled %d tracking numbers via JavaScript",
+                    len(tracking_numbers)
+                )
+            except Exception as e:
+                logging.warning("[PW] JavaScript fill failed: %s, trying click+fill", e)
+                # Método 2: Click + fill tradicional
+                try:
+                    await textarea.click()
+                    await asyncio.sleep(0.3)
+                    await textarea.fill("")
+                    await asyncio.sleep(0.3)
+                    await textarea.fill(batch_text)
+                    logging.info(
+                        "[PW] Filled %d tracking numbers via click+fill",
+                        len(tracking_numbers)
+                    )
+                except Exception as e2:
+                    logging.warning("[PW] Click+fill failed: %s, trying type", e2)
+                    # Método 3: Type character by character (más lento pero seguro)
+                    await textarea.click()
+                    await asyncio.sleep(0.3)
+                    await textarea.press("Control+A")
+                    await textarea.press("Backspace")
+                    await asyncio.sleep(0.3)
+                    await textarea.type(batch_text, delay=10)
+                    logging.info(
+                        "[PW] Typed %d tracking numbers character by character",
+                        len(tracking_numbers)
+                    )
+
+            # Verificar que el contenido se haya ingresado
+            await asyncio.sleep(0.5)
+            current_value = await textarea.input_value()
+            if not current_value or len(current_value) < 10:
+                logging.error(
+                    "[PW] Textarea appears empty after filling! Current value length: %d",
+                    len(current_value) if current_value else 0
+                )
+                # Último intento: Focus + paste
+                logging.debug("[PW] Last attempt: using clipboard paste...")
+                await textarea.focus()
+                await page.evaluate(
+                    """(text) => {
+                        const textarea = document.querySelector('textarea#auto-size-textarea');
+                        if (textarea) {
+                            textarea.focus();
+                            textarea.value = text;
+                            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }""",
+                    batch_text
+                )
+                await asyncio.sleep(0.5)
+            else:
+                logging.info("[PW] Textarea content verified: %d characters", len(current_value))
 
             # Wait a bit after filling
             await asyncio.sleep(1)
 
             # Find and click the Rastrear button - SELECTOR EXACTO
             logging.debug("[PW] Looking for Rastrear button...")
+            
+            # Selector principal basado en el HTML exacto
+            # <div class="...btn btn-primary...batch_track_search-area-bottom__MV_vI">
             track_button = page.locator(
-                'div.batch_track_search-area-bottom__MV_vI:has-text("Rastrear")'
+                'div.batch_track_search-area-bottom__MV_vI.btn-primary'
             )
 
             try:
                 await track_button.wait_for(state="visible", timeout=10000)
                 logging.info("[PW] Rastrear button found!")
+                
+                # Scroll to button to ensure it's in viewport
+                await track_button.scroll_into_view_if_needed()
+                await asyncio.sleep(0.5)
+                
             except Exception as e:
-                logging.error("[PW] Button not found: %s", e)
+                logging.error("[PW] Primary button selector failed: %s", e)
                 # Try fallback selectors
                 fallback_buttons = [
+                    'div.batch_track_search-area-bottom__MV_vI:has-text("Rastrear")',
                     'div.btn-primary:has-text("Rastrear")',
                     'div[class*="search-area-bottom"]:has-text("Rastrear")',
-                    'div.btn:has-text("Rastrear")',
-                    'button:has-text("Rastrear")'
+                    'div.cursor-pointer:has-text("Rastrear")',
+                    'div.btn.btn-block:has-text("Rastrear")'
                 ]
                 for selector in fallback_buttons:
                     try:
@@ -387,6 +458,8 @@ class AsyncEnviaScraper:
                             "[PW] Button found with fallback: %s",
                             selector
                         )
+                        await track_button.scroll_into_view_if_needed()
+                        await asyncio.sleep(0.5)
                         break
                     except:
                         continue
@@ -400,8 +473,20 @@ class AsyncEnviaScraper:
                     track_button = None
 
             if track_button:
-                await track_button.click()
-                logging.info("[PW] Clicked Rastrear button")
+                # Try clicking with force if needed
+                try:
+                    await track_button.click()
+                    logging.info("[PW] Clicked Rastrear button successfully")
+                except Exception as e:
+                    logging.warning("[PW] Normal click failed, trying force click: %s", e)
+                    try:
+                        await track_button.click(force=True)
+                        logging.info("[PW] Force clicked Rastrear button")
+                    except Exception as e2:
+                        logging.error("[PW] Force click also failed: %s", e2)
+                        # Final fallback: JavaScript click
+                        await track_button.evaluate("element => element.click()")
+                        logging.info("[PW] JavaScript clicked Rastrear button")
 
             # Wait for results to load
             logging.info("[PW] Waiting for results to load...")

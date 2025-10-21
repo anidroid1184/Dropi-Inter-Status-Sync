@@ -18,7 +18,8 @@ Aplicaci√≥n independiente para scraping de estados de tracking desde Interrapid√
 ```bash
 cd app_scrapper
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate  # Windows: 
+venv\Scripts\activate
 pip install -r requirements.txt
 playwright install chromium
 ```

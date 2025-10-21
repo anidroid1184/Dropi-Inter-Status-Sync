@@ -7,7 +7,7 @@ el portal web de Interrapidísimo y actualización en Google Sheets.
 Responsabilidades:
 - Scraping web de estados de Interrapidísimo (sync/async)
 - Extracción del estado crudo exactamente como aparece en la web
-- Actualización solo de columna STATUS INTERRAPIDISIMO con texto sin normalizar
+- Actualización solo de columna STATUS TRANSPORTADORA con texto sin normalizar
 - Logging de operaciones de scraping
 - Gestión de reintentos y errores
 
@@ -202,8 +202,8 @@ def scrape_sync(
                 status = scraper.get_status(tracking)
 
                 if status and not dry_run:
-                    # Guardar inmediatamente el estado crudo en STATUS INTERRAPIDISIMO
-                    sheets.update_cell(idx, "STATUS INTERRAPIDISIMO", status)
+                    # Guardar inmediatamente el estado crudo en STATUS TRANSPORTADORA
+                    sheets.update_cell(idx, "STATUS TRANSPORTADORA", status)
                     saved_count += 1
 
                 logging.info(f"[{idx}] {tracking}: {status or 'VACIO'}")

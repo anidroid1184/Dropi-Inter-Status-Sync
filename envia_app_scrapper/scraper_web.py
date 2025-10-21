@@ -133,10 +133,10 @@ class EnviaScraper:
                 "Processing batch of %d tracking numbers",
                 len(tracking_numbers)
             )
-            page.goto(url, timeout=45000, wait_until="networkidle")
+            page.goto(url, timeout=60000, wait_until="domcontentloaded")
 
-            # Wait for page to fully render
-            page.wait_for_timeout(3000)
+            # Wait for page to fully render and load dynamic content
+            page.wait_for_timeout(5000)
 
             # Try to accept cookie banners
             with suppress(Exception):
@@ -188,38 +188,109 @@ class EnviaScraper:
             textarea.scroll_into_view_if_needed()
             page.wait_for_timeout(500)
 
-            # Clear and fill textarea
-            textarea.click()
-            textarea.fill("")
+            # Preparar texto del batch
             batch_text = "\n".join(tracking_numbers[:40])
-            textarea.fill(batch_text)
-            logging.info(f"Filled {len(tracking_numbers)} tracking numbers")
+            
+            # Método 1: Intentar con JavaScript (más confiable)
+            logging.debug("Filling textarea with JavaScript...")
+            try:
+                textarea.evaluate(
+                    """(element, text) => {
+                        element.value = text;
+                        element.dispatchEvent(new Event('input', { bubbles: true }));
+                        element.dispatchEvent(new Event('change', { bubbles: true }));
+                    }""",
+                    batch_text
+                )
+                logging.info(
+                    f"Filled {len(tracking_numbers)} tracking numbers via JavaScript"
+                )
+            except Exception as e:
+                logging.warning(f"JavaScript fill failed: {e}, trying click+fill")
+                # Método 2: Click + fill tradicional
+                try:
+                    textarea.click()
+                    page.wait_for_timeout(300)
+                    textarea.fill("")
+                    page.wait_for_timeout(300)
+                    textarea.fill(batch_text)
+                    logging.info(
+                        f"Filled {len(tracking_numbers)} tracking numbers via click+fill"
+                    )
+                except Exception as e2:
+                    logging.warning(f"Click+fill failed: {e2}, trying type")
+                    # Método 3: Type character by character (más lento pero seguro)
+                    textarea.click()
+                    page.wait_for_timeout(300)
+                    textarea.press("Control+A")
+                    textarea.press("Backspace")
+                    page.wait_for_timeout(300)
+                    textarea.type(batch_text, delay=10)
+                    logging.info(
+                        f"Typed {len(tracking_numbers)} tracking numbers character by character"
+                    )
+
+            # Verificar que el contenido se haya ingresado
+            page.wait_for_timeout(500)
+            current_value = textarea.input_value()
+            if not current_value or len(current_value) < 10:
+                logging.error(
+                    f"Textarea appears empty after filling! Current value length: {len(current_value) if current_value else 0}"
+                )
+                # Último intento: Focus + paste
+                logging.debug("Last attempt: using clipboard paste...")
+                textarea.focus()
+                page.evaluate(
+                    """(text) => {
+                        const textarea = document.querySelector('textarea#auto-size-textarea');
+                        if (textarea) {
+                            textarea.focus();
+                            textarea.value = text;
+                            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }""",
+                    batch_text
+                )
+                page.wait_for_timeout(500)
+            else:
+                logging.info(f"Textarea content verified: {len(current_value)} characters")
 
             page.wait_for_timeout(1000)
 
             # Find and click Rastrear button - SELECTOR EXACTO
             logging.info("Looking for Rastrear button...")
+            
+            # Selector principal basado en el HTML exacto
             track_button = page.locator(
-                'div.batch_track_search-area-bottom__MV_vI:has-text("Rastrear")'
+                'div.batch_track_search-area-bottom__MV_vI.btn-primary'
             )
 
             try:
                 track_button.wait_for(state="visible", timeout=10000)
                 logging.info("Rastrear button found!")
+                
+                # Scroll to button to ensure it's in viewport
+                track_button.scroll_into_view_if_needed()
+                page.wait_for_timeout(500)
+                
             except Exception as e:
-                logging.error(f"Button not found: {e}")
+                logging.error(f"Primary button selector failed: {e}")
                 # Try fallback
                 fallback_buttons = [
+                    'div.batch_track_search-area-bottom__MV_vI:has-text("Rastrear")',
                     'div.btn-primary:has-text("Rastrear")',
                     'div[class*="search-area-bottom"]:has-text("Rastrear")',
-                    'div.btn:has-text("Rastrear")',
-                    'button:has-text("Rastrear")'
+                    'div.cursor-pointer:has-text("Rastrear")',
+                    'div.btn.btn-block:has-text("Rastrear")'
                 ]
                 for selector in fallback_buttons:
                     try:
                         track_button = page.locator(selector).first
                         track_button.wait_for(state="visible", timeout=5000)
                         logging.info(f"Button found with fallback: {selector}")
+                        track_button.scroll_into_view_if_needed()
+                        page.wait_for_timeout(500)
                         break
                     except:
                         continue
@@ -230,8 +301,20 @@ class EnviaScraper:
                     track_button = None
 
             if track_button:
-                track_button.click()
-                logging.info("Clicked Rastrear button")
+                # Try clicking with force if needed
+                try:
+                    track_button.click()
+                    logging.info("Clicked Rastrear button successfully")
+                except Exception as e:
+                    logging.warning(f"Normal click failed, trying force click: {e}")
+                    try:
+                        track_button.click(force=True)
+                        logging.info("Force clicked Rastrear button")
+                    except Exception as e2:
+                        logging.error(f"Force click also failed: {e2}")
+                        # Final fallback: JavaScript click
+                        track_button.evaluate("element => element.click()")
+                        logging.info("JavaScript clicked Rastrear button")
 
             # Wait for results to load
             logging.info("Waiting for results to load...")

@@ -32,3 +32,4 @@ scripts/_legacy/
 deprecated/
 credentials/
 *.zip
+/docs
