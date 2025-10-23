@@ -28,6 +28,7 @@ Versión: 2.0.0
 from __future__ import annotations
 import argparse
 import logging
+import asyncio
 import sys
 from typing import List, Tuple
 
@@ -35,6 +36,7 @@ from scraper_config import settings
 from scraper_logging import setup_logging
 from scraper_sheets import SheetsClient
 from scraper_web_coordinadora import CoordinadoraScraper
+from scraper_web_coordinadora_async import AsyncCoordinadoraScraper
 from scraper_credentials import load_credentials
 import time
 
@@ -76,6 +78,27 @@ def parse_arguments() -> argparse.Namespace:
         type=int,
         default=None,
         help="Límite de filas a procesar"
+    )
+
+    parser.add_argument(
+        "--async",
+        dest="use_async",
+        action="store_true",
+        help="Usar scraper asíncrono con concurrencia"
+    )
+
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=5,
+        help="Páginas concurrentes (solo para --async, default: 5)"
+    )
+
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=50,
+        help="Tamaño de batch para guardar (default: 50)"
     )
 
     parser.add_argument(
@@ -256,6 +279,138 @@ def scrape_sync(
     return processed
 
 
+async def scrape_async(
+    sheets: SheetsClient,
+    start_row: int,
+    end_row: int | None,
+    limit: int | None,
+    concurrency: int,
+    batch_size: int,
+    only_empty: bool,
+    dry_run: bool,
+    time_test_enabled: bool = False,
+    time_test_seconds: int | None = None,
+) -> int:
+    """
+    Ejecuta scraping asíncrono de estados de Coordinadora.
+
+    Args:
+        sheets: Cliente de Google Sheets
+        start_row: Fila inicial
+        end_row: Fila final
+        limit: Límite de filas
+        concurrency: Páginas concurrentes
+        batch_size: Tamaño de batch para guardar
+        only_empty: Solo procesar vacíos
+        dry_run: Modo simulación
+        time_test_enabled: Si está activado el modo time-test
+        time_test_seconds: Segundos a esperar entre batches
+
+    Returns:
+        int: Número de filas procesadas
+    """
+    logging.info("Iniciando scraping asíncrono de Coordinadora...")
+    logging.info(f"Concurrencia: {concurrency} ventanas simultáneas")
+
+    records = sheets.read_all_records()
+    items = filter_records(records, start_row, end_row, limit, only_empty)
+
+    if not items:
+        logging.warning("No hay items para procesar")
+        return 0
+
+    scraper = AsyncCoordinadoraScraper(
+        headless=settings.headless,
+        max_concurrency=concurrency,
+        base_url=settings.base_url
+    )
+
+    try:
+        await scraper.start()
+
+        # Procesar en batches con guardado incremental
+        total_processed = 0
+
+        try:
+            for i in range(0, len(items), batch_size):
+                batch = items[i:i + batch_size]
+                tracking_numbers = [tn for _, tn in batch]
+
+                logging.info(
+                    f"Procesando batch {i//batch_size + 1}/"
+                    f"{(len(items) + batch_size - 1)//batch_size}: "
+                    f"{len(batch)} items"
+                )
+
+                try:
+                    # Procesar batch completo en paralelo
+                    results = await scraper.get_status_many(
+                        tracking_numbers
+                    )
+                    status_map = dict(results)
+
+                    if not dry_run:
+                        updates = []
+                        for idx, tn in batch:
+                            status = status_map.get(tn, "")
+                            if status:
+                                updates.append((idx, status))
+
+                        # Guardar inmediatamente después de cada batch
+                        if updates:
+                            logging.info(
+                                f"Guardando {len(updates)} resultados..."
+                            )
+                            sheets.batch_update_status(
+                                updates,
+                                column="STATUS TRANSPORTADORA"
+                            )
+                            logging.info(
+                                "✓ Resultados guardados exitosamente"
+                            )
+
+                    total_processed += len(batch)
+                    logging.info(
+                        f"Progreso: {total_processed}/{len(items)}"
+                    )
+
+                    # Si --time-test está activo, esperar
+                    if time_test_enabled:
+                        timeout_val = time_test_seconds or TIMEOUT_TEST
+                        logging.debug(
+                            "--time-test activo: sleeping %s s "
+                            "after batch %s",
+                            timeout_val,
+                            i // batch_size + 1,
+                        )
+                        await asyncio.sleep(timeout_val)
+
+                except Exception as e:
+                    logging.error(
+                        f"Error procesando batch {i//batch_size + 1}: {e}"
+                    )
+                    # Continuar con el siguiente batch
+                    continue
+
+        except KeyboardInterrupt:
+            logging.warning(
+                "\n⚠️  Interrupción detectada por el usuario"
+            )
+            logging.info(
+                f"✓ Progreso guardado hasta el momento: "
+                f"{total_processed}/{len(items)} filas procesadas"
+            )
+            raise
+
+        logging.info(
+            f"Scraping asíncrono completado: {total_processed} filas"
+        )
+        return total_processed
+
+    finally:
+        await scraper.close()
+
+
 def main() -> int:
     """
     Función principal de la app de scraping de Coordinadora.
@@ -267,7 +422,10 @@ def main() -> int:
     setup_logging()
 
     logging.info("=== SCRAPER COORDINADORA INICIANDO ===")
-    logging.info("Modo: Síncrono (Playwright)")
+    modo = "Asíncrono" if args.use_async else "Síncrono"
+    logging.info(f"Modo: {modo} (Playwright)")
+    if args.use_async:
+        logging.info(f"Concurrencia: {args.concurrency} ventanas")
     logging.info(f"Rango: {args.start_row}-{args.end_row or 'fin'}")
     logging.info(f"BASE_URL: {settings.base_url}")
 
@@ -276,27 +434,44 @@ def main() -> int:
         credentials = load_credentials()
         sheets = SheetsClient(credentials, settings.spreadsheet_name)
 
-        # Inicializar scraper de Coordinadora con Playwright
-        scraper = CoordinadoraScraper(
-            headless=settings.headless,
-            base_url=settings.base_url
-        )
-
-        try:
-            # Ejecutar scraping
-            processed = scrape_sync(
-                sheets,
-                scraper,
-                args.start_row,
-                args.end_row,
-                args.limit,
-                args.only_empty,
-                args.dry_run,
-                time_test_enabled=args.time_test,
-                time_test_seconds=args.time_test_seconds,
+        # Ejecutar scraping según modo
+        if args.use_async:
+            # Modo asíncrono con concurrencia
+            processed = asyncio.run(
+                scrape_async(
+                    sheets,
+                    args.start_row,
+                    args.end_row,
+                    args.limit,
+                    args.concurrency,
+                    args.batch_size,
+                    args.only_empty,
+                    args.dry_run,
+                    time_test_enabled=args.time_test,
+                    time_test_seconds=args.time_test_seconds,
+                )
             )
-        finally:
-            scraper.close()
+        else:
+            # Modo síncrono (una ventana a la vez)
+            scraper = CoordinadoraScraper(
+                headless=settings.headless,
+                base_url=settings.base_url
+            )
+
+            try:
+                processed = scrape_sync(
+                    sheets,
+                    scraper,
+                    args.start_row,
+                    args.end_row,
+                    args.limit,
+                    args.only_empty,
+                    args.dry_run,
+                    time_test_enabled=args.time_test,
+                    time_test_seconds=args.time_test_seconds,
+                )
+            finally:
+                scraper.close()
 
         logging.info(f"=== SCRAPER COMPLETADO: {processed} filas ===")
         return 0
