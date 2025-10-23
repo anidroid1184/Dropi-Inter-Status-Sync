@@ -27,13 +27,13 @@ from playwright.sync_api import (
 class CoordinadoraScraper:
     """
     Scraper para obtener estados de tracking desde Coordinadora.
-    
+
     Utiliza acceso directo a URL con el ID de la guía:
     https://coordinadora.com/rastreo/rastreo-de-guia/detalle-de-rastreo-de-guia/?guia=ID
-    
+
     El estado se extrae desde:
     <span class="strong-text title">Estado del paquete</span>
-    
+
     Dentro del elemento padre:
     <div class="detail">
         <span class="light-text">Estado de la guía:</span>
@@ -45,7 +45,7 @@ class CoordinadoraScraper:
     def __init__(self, headless: bool = True, base_url: str = ""):
         """
         Inicializa el scraper de Coordinadora.
-        
+
         Args:
             headless: Si True, ejecuta el browser sin interfaz gráfica
             base_url: URL base para construir las URLs de tracking
@@ -53,7 +53,7 @@ class CoordinadoraScraper:
         self._pw = sync_playwright().start()
         self._headless = headless
         self._base_url = base_url
-        
+
         logging.info(
             "Iniciando Playwright Chromium para Coordinadora. headless=%s",
             headless
@@ -63,7 +63,7 @@ class CoordinadoraScraper:
             "--no-sandbox",
             "--disable-dev-shm-usage",
         ]
-        
+
         slow_mo = 250 if not headless else 0
         if not headless:
             launch_args.append("--start-maximized")
@@ -77,10 +77,10 @@ class CoordinadoraScraper:
     def get_status(self, tracking_number: str) -> str:
         """
         Obtiene el estado de una guía de Coordinadora.
-        
+
         Args:
             tracking_number: Número de guía a consultar
-            
+
         Returns:
             Estado extraído de la web, o string vacío si hay error
         """
@@ -100,7 +100,7 @@ class CoordinadoraScraper:
 
             # Construir URL con el ID de tracking
             url = f"{self._base_url}{tracking_number}"
-            
+
             logging.info(
                 "Consultando estado para guía: %s",
                 tracking_number
@@ -168,84 +168,84 @@ class CoordinadoraScraper:
     def _extract_status(self, page) -> str:
         """
         Extrae el estado del paquete desde la página.
-        
+
         Busca el elemento:
         <span class="strong-text title">Entregado</span>
-        
+
         Que está después de "Estado del paquete"
-        
+
         Args:
             page: Página de Playwright
-            
+
         Returns:
             Estado extraído o string vacío
         """
         try:
             # Estrategia 1: Buscar directamente el span con clase
             # "strong-text title" que está cerca de "Estado del paquete"
-            
+
             # Primero intentamos encontrar el contenedor con
             # "Estado del paquete"
             estado_label = page.locator(
                 'span.strong-text.title:has-text("Estado del paquete")'
             )
-            
+
             if estado_label.count() > 0:
                 logging.debug("Encontrado label 'Estado del paquete'")
-                
+
                 # El estado está en el siguiente span con clase
                 # "strong-text title"
                 # Buscamos en el elemento padre
                 parent = estado_label.locator('xpath=ancestor::div[1]')
-                
+
                 # Dentro del padre, buscamos los spans con la clase
                 estado_spans = parent.locator('span.strong-text.title')
-                
+
                 # El segundo span debería ser el estado
                 if estado_spans.count() >= 2:
                     estado = estado_spans.nth(1).inner_text(timeout=5000)
                     return estado.strip()
-            
+
             # Estrategia 2: Buscar en el div.detail que contiene
             # "Estado de la guía:"
             logging.debug("Intentando estrategia 2: div.detail")
-            
+
             detail_div = page.locator(
                 'div.detail:has(span.light-text:has-text("Estado de la guía:"))'
             )
-            
+
             if detail_div.count() > 0:
                 logging.debug("Encontrado div.detail con 'Estado de la guía'")
-                
+
                 # Dentro de este div, buscar el span con clase
                 # "strong-text title"
                 estado_span = detail_div.locator(
                     'span.strong-text.title'
                 ).first
-                
+
                 if estado_span.count() > 0:
                     estado = estado_span.inner_text(timeout=5000)
                     return estado.strip()
-            
+
             # Estrategia 3: Buscar cualquier span después del texto
             # "Estado de la guía:"
             logging.debug("Intentando estrategia 3: búsqueda general")
-            
+
             estado_guia_label = page.locator(
                 'span.light-text:has-text("Estado de la guía:")'
             )
-            
+
             if estado_guia_label.count() > 0:
                 # Buscar el siguiente hermano span
                 parent = estado_guia_label.locator('xpath=..')
                 estado_span = parent.locator(
                     'span.strong-text.title'
                 ).first
-                
+
                 if estado_span.count() > 0:
                     estado = estado_span.inner_text(timeout=5000)
                     return estado.strip()
-            
+
             logging.warning("No se encontró el estado con ninguna estrategia")
             return ""
 

@@ -26,7 +26,7 @@ load_dotenv(env_path)
 @dataclass(frozen=True)
 class ScraperSettings:
     """Configuración del scraper."""
-    
+
     spreadsheet_name: str = os.getenv("SPREADSHEET_NAME", "seguimiento")
     headless: bool = os.getenv("HEADLESS", "true").lower() == "true"
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
