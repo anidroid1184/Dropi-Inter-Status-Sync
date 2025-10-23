@@ -1,0 +1,5 @@
+Estado del paquete
+<span class="strong-text title">Entregado</span>
+
+Elemento padre
+<div class="detail"><span class="light-text">Estado de la guía:</span><span class="strong-text title">En terminal destino</span><span class="light-text" style="grid-area: 1 / 2 / 3 / 3;"><span class="title"> Destino: </span><span style="text-transform: uppercase;">Talaigua nuevo (bol)</span></span></div>

@@ -1,22 +1,22 @@
 """
-APP SCRAPER ENVIA - Sistema de Scraping de Estados Envía
+APP SCRAPER COORDINADORA - Sistema de Scraping de Estados Coordinadora
 
 Aplicación independiente para scraping de estados de tracking desde
-el portal web de 17track.net para Envía y actualización en Google Sheets.
+el portal web de Coordinadora.
 
 Responsabilidades:
-- Scraping web de estados de Envía desde 17track.net (sync/async)
-- Procesamiento de hasta 40 guías por vez
+- Scraping web de estados de Coordinadora mediante acceso directo a URL
+- Procesamiento individual de guías (no soporta batch)
 - Extracción del estado crudo exactamente como aparece en la web
-- Actualización solo de columna STATUS ENVIA con texto sin normalizar
+- Actualización solo de columna STATUS TRANSPORTADORA con texto sin normalizar
 - Logging de operaciones de scraping
 - Gestión de reintentos y errores
 
 IMPORTANTE: Este scraper NO normaliza estados. Guarda el texto crudo de la web.
 Ejemplos de salida:
-  - "En tránsito"
   - "Entregado"
-  - "En proceso"
+  - "En terminal destino"
+  - "En tránsito"
 
 La normalización y comparación se realiza en app_comparer.
 
@@ -36,8 +36,7 @@ from typing import List, Tuple
 from scraper_config import settings
 from scraper_logging import setup_logging
 from scraper_sheets import SheetsClient
-from scraper_web import EnviaScraper
-from scraper_web_async import AsyncEnviaScraper
+from scraper_web_coordinadora import CoordinadoraScraper
 from scraper_credentials import load_credentials
 import time
 
@@ -55,7 +54,7 @@ def parse_arguments() -> argparse.Namespace:
         argparse.Namespace: Argumentos parseados
     """
     parser = argparse.ArgumentParser(
-        description="Scraper de estados Interrapidísimo",
+        description="Scraper de estados Coordinadora",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
@@ -78,35 +77,6 @@ def parse_arguments() -> argparse.Namespace:
         type=int,
         default=None,
         help="Límite de filas a procesar"
-    )
-
-    # Grupo mutuamente exclusivo para modo de scraping
-    mode_group = parser.add_mutually_exclusive_group()
-    mode_group.add_argument(
-        "--async",
-        dest="use_async",
-        action="store_true",
-        help="Usar scraper asíncrono (guarda por batch de 40 guías)"
-    )
-    mode_group.add_argument(
-        "--sync",
-        dest="use_sync",
-        action="store_true",
-        help="Usar scraper síncrono (guarda uno por uno)"
-    )
-
-    parser.add_argument(
-        "--concurrency",
-        type=int,
-        default=3,
-        help="Páginas concurrentes (solo para --async, default: 3)"
-    )
-
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=5000,
-        help="Tamaño de batch (default: 5000)"
     )
 
     parser.add_argument(
@@ -201,30 +171,33 @@ def filter_records(
 
 def scrape_sync(
     sheets: SheetsClient,
-    scraper: EnviaScraper,
+    scraper: CoordinadoraScraper,
     start_row: int,
     end_row: int | None,
     limit: int | None,
     only_empty: bool,
-    dry_run: bool, time_test_enabled: bool = False,
+    dry_run: bool,
+    time_test_enabled: bool = False,
     time_test_seconds: int | None = None,
 ) -> int:
     """
-    Ejecuta scraping síncrono de estados.
+    Ejecuta scraping síncrono de estados de Coordinadora.
 
     Args:
         sheets: Cliente de Google Sheets
-        scraper: Scraper síncrono
+        scraper: Scraper de Coordinadora
         start_row: Fila inicial
         end_row: Fila final
         limit: Límite de filas
         only_empty: Solo procesar vacíos
         dry_run: Modo simulación
+        time_test_enabled: Si está activado el modo time-test
+        time_test_seconds: Segundos a esperar entre items en time-test
 
     Returns:
         int: Número de filas procesadas
     """
-    logging.info("Iniciando scraping síncrono...")
+    logging.info("Iniciando scraping de Coordinadora...")
 
     records = sheets.read_all_records()
     items = filter_records(records, start_row, end_row, limit, only_empty)
@@ -252,7 +225,8 @@ def scrape_sync(
                     logging.info(f"[{idx}] {tracking}: {status or 'VACIO'}")
 
                 processed += 1
-                # Si la opción de time_test está activada, esperar el timeout
+                
+                # Si la opción de time_test está activada, esperar
                 if time_test_enabled:
                     timeout_val = time_test_seconds or TIMEOUT_TEST
                     logging.debug(
