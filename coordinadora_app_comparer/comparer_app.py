@@ -65,15 +65,7 @@ def run(dry_run: bool = False) -> None:
 
     # Ejecutar batch update
     client.batch_update_comparison(updates)
-
-    # Escribir reporte
-    report = {
-        "TOTAL": total,
-        "COINCIDEN": matches,
-        "NO_COINCIDEN": no_matches,
-        "DESCONOCIDO_TRANSPORTADORA": unknown_transport,
-    }
-    client.write_report(report)
+    logging.info("Comparación completada")
 
 
 def main() -> None:

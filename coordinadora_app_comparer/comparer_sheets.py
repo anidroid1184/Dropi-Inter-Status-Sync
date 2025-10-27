@@ -68,35 +68,6 @@ class SheetsClient:
             self.worksheet.batch_update(batch_data)
             logging.info(f"Batch update ejecutado: {len(batch_data)} celdas")
 
-    def write_report(self, report: Dict[str, int]) -> None:
-        """Escribe un reporte simple en una hoja nueva o la sobrescribe.
-
-        report: dict clave->valor (ej: {'TOTAL': 100, 'COINCIDEN': 80})
-        """
-        sheet_title = "REPORTE_COORDINADORA"
-
-        try:
-            # eliminar si existe
-            try:
-                old = self.spreadsheet.worksheet(sheet_title)
-                self.spreadsheet.del_worksheet(old)
-            except gspread.exceptions.WorksheetNotFound:
-                pass
-
-            # crear nueva hoja con filas suficientes
-            ws = self.spreadsheet.add_worksheet(
-                title=sheet_title, rows=100, cols=2
-            )
-
-            rows = [["METRICA", "VALOR"]]
-            for k, v in report.items():
-                rows.append([k, str(v)])
-
-            ws.update('A1:B{}'.format(len(rows)), rows)
-            logging.info(f"Reporte escrito en hoja: {sheet_title}")
-        except Exception as e:
-            logging.exception(f"Error escribiendo reporte: {e}")
-
     @staticmethod
     def _col_letter(col_num: int) -> str:
         result = ""
