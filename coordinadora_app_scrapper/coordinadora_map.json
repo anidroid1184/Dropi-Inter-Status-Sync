@@ -1,0 +1,84 @@
+{
+  "GUIA_GENERADA": [
+    "guia generada",
+    "guía generada",
+    "documento generado",
+    "admitido",
+    "admitida",
+    "recibido",
+    "recibida",
+    "recolectado",
+    "recolectada"
+  ],
+  "EN_PROCESAMIENTO": [
+    "en procesamiento",
+    "en proceso",
+    "procesando",
+    "en tramite",
+    "en trámite"
+  ],
+  "EN_BODEGA_TRANSPORTADORA": [
+    "en bodega transportadora",
+    "en bodega origen",
+    "en centro de acopio",
+    "en centro logistico",
+    "en centro logístico"
+  ],
+  "EN_TRANSITO": [
+    "en transito",
+    "en tránsito",
+    "en ruta",
+    "despachado",
+    "despachada",
+    "en camino"
+  ],
+  "EN_TERMINAL_DESTINO": [
+    "en terminal destino",
+    "en bodega destino",
+    "llegó a destino",
+    "llego a destino",
+    "en ciudad destino"
+  ],
+  "EN_REPARTO": [
+    "en reparto",
+    "en distribucion",
+    "en distribución",
+    "salio a entrega",
+    "salió a entrega",
+    "en ruta de entrega",
+    "en camino a entrega"
+  ],
+  "ENTREGADO": [
+    "entregado",
+    "entregada",
+    "entrega exitosa",
+    "entrega satisfactoria",
+    "entregado al destinatario",
+    "entregada al destinatario"
+  ],
+  "DEVUELTO": [
+    "devuelto",
+    "devuelta",
+    "devolucion",
+    "devolución",
+    "devuelto al remitente",
+    "devuelta al remitente"
+  ],
+  "NOVEDAD": [
+    "con novedad",
+    "novedad",
+    "retenido",
+    "retenida",
+    "direccion erronea",
+    "dirección errónea",
+    "destinatario ausente",
+    "no reclamado",
+    "rechazado"
+  ],
+  "CANCELADO": [
+    "cancelado",
+    "cancelada",
+    "anulado",
+    "anulada"
+  ]
+}

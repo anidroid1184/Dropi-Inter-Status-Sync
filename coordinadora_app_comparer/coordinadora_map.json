@@ -1,0 +1,111 @@
+{
+"GUIA_GENERADA": [
+"guia generada",
+"guía generada",
+"documento generado",
+"admitido",
+"admitida",
+"recibido",
+"recibida",
+"recolectado",
+"recolectada",
+"a recibir por coordinadora",
+"a recibir por transportadora",
+"pendiente de recolección",
+"pendiente de recogida",
+"lista para recoger"
+],
+"EN_PROCESAMIENTO": [
+"en procesamiento",
+"en proceso",
+"procesando",
+"en tramite",
+"en trámite",
+"preparando envío",
+"preparando despacho"
+],
+"EN_BODEGA_TRANSPORTADORA": [
+"en bodega transportadora",
+"en bodega origen",
+"en centro de acopio",
+"en centro logistico",
+"en centro logístico",
+"en terminal origen",
+"en plataforma origen",
+"recibido en bodega",
+"en punto droop",
+"en punto de retiro",
+"en punto de entrega"
+],
+"EN_TRANSITO": [
+"en transito",
+"en tránsito",
+"en ruta",
+"despachado",
+"despachada",
+"en camino",
+"en transporte",
+"movilizándose",
+"en traslado"
+],
+"EN_TERMINAL_DESTINO": [
+"en terminal destino",
+"en bodega destino",
+"llegó a destino",
+"llego a destino",
+"en ciudad destino",
+"en plataforma destino",
+"recibido en destino"
+],
+"EN_REPARTO": [
+"en reparto",
+"en distribucion",
+"en distribución",
+"salio a entrega",
+"salió a entrega",
+"en ruta de entrega",
+"en camino a entrega"
+],
+"ENTREGADO": [
+"entregado",
+"entregada",
+"entrega exitosa",
+"entrega satisfactoria",
+"entregado al destinatario",
+"entregada al destinatario",
+"recibido por destinatario"
+],
+"DEVUELTO": [
+"devuelto",
+"devuelta",
+"devolucion",
+"devolución",
+"devuelto al remitente",
+"devuelta al remitente",
+"en devolución",
+"retornado a origen",
+"devuelto por incidencia"
+],
+"NOVEDAD": [
+"con novedad",
+"novedad",
+"retenido",
+"retenida",
+"direccion erronea",
+"dirección errónea",
+"destinatario ausente",
+"no reclamado",
+"rechazado",
+"incidencia",
+"novedad solucionada",
+"solución de novedad"
+],
+"CANCELADO": [
+"cancelado",
+"cancelada",
+"anulado",
+"anulada",
+"cerrado por incidencia",
+"proceso cerrado por incidencia"
+]
+}
